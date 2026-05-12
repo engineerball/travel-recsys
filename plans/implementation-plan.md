@@ -94,50 +94,38 @@ user_id | item_id | item_type | signal | timestamp | session_id
 
 ---
 
-## Phase 4: Serving
+## ✅ Phase 4: Serving
 
-### 4.1 `src/serving/retrieval.py` — TODO
-```python
-class FAISSRetriever:
-    def build_index(self, item_embeddings):
-        # สร้าง FAISS index จาก item embeddings ทั้งหมด
-
-    def query(self, user_embedding, top_k=100):
-        # ANN search → return top-K item IDs + scores
-```
+### ✅ 4.1 `src/serving/retrieval.py` — DONE
+- `FAISSRetriever` — `IndexFlatIP` on 64-dim L2-normalized embeddings; `build_index(embeddings, item_ids)`, `query(user_emb, top_k)` → `(ids, scores)`; `save(dir, prefix)` / `load(dir, prefix)`
+- `MultiTypeIndex` — one `FAISSRetriever` per `ItemType`; `build(embs_dict, ids_dict)`, `query_type(...)`, merged `query(user_emb, top_k_per_type, top_k_total)` → `List[RetrievalResult]` sorted by score
+- `RetrievalResult` — dataclass `(item_id, item_type, score)`
+- `RetrievalPipeline` — wraps `TwoTowerModel` + `MultiTypeIndex`; `retrieve(user_inputs)` encodes user via model then queries index; `build_index_from_model(model, item_features_dict, item_ids_dict)` batch-encodes all items and builds index in one call
 
 ---
 
-## Phase 5: Scripts
+## ✅ Phase 5: Scripts
 
-### `scripts/embed_items.py` — TODO
-```
-1. Load item data จาก data/raw/ (4 types)
-2. สร้าง text_for_embed ผ่าน preprocess_* (already has this column)
-3. Call Gemma embedding API (batch)
-4. Truncate ที่ 256 dim (MRL)
-5. Save เป็น numpy array + item_id mapping per type
-```
+### ✅ `scripts/embed_items.py` — DONE
+- Loads raw parquets per type → `preprocess_*` → `text_for_embed` column
+- Encodes via `SentenceTransformer("google/embeddinggemma-300m", truncate_dim=256)` (MRL 256-dim, L2-normalized)
+- `HF_TOKEN` env var; per-type `--types` filter
+- Saves `data/processed/{type}_text_embeds.npy` (float32 [N, 256]) + `{type}_item_ids.npy`
 
-### `scripts/generate_behavior.py` — TODO
-```
-1. Load preprocessed item features + user profiles
-2. Run BehaviorDataset.generate(config)
-3. Attach behavior features to user profiles (category_pref_indices, category_interaction_history, subcat_affinity)
-4. Save interactions → data/generated/interactions.parquet
-5. Save enriched user features → data/generated/user_features.parquet
-```
+### ✅ `scripts/generate_behavior.py` — DONE
+- Loads config.yaml personas + raw data (4 types + user_profiles)
+- Runs `InteractionGenerator.generate()` → interaction table
+- Calls `compute_behavior_features()` for behavior feature columns
+- Joins onto `preprocess_users()` profiles; zero-fills users with no interactions
+- Saves `data/generated/interactions.parquet` + `data/generated/user_features.parquet`
 
-### `scripts/train.py` — TODO
-```
-1. Load config
-2. Load processed data
-3. Build tf.data datasets (train/val)
-4. Initialize TwoTowerModel
-5. Run TwoTowerTrainer.train()
-6. Save towers แยกกัน (user_tower, item_towers/)
-7. Build FAISS index จาก item embeddings
-```
+### ✅ `scripts/train.py` — DONE
+- Loads config + generated data; optionally joins pre-computed text embeddings
+- Builds `StratifiedInteractionDataset` → train/val `tf.data.Dataset`
+- Initializes `TwoTowerModel` + `TwoTowerTrainer`; runs joint training loop
+- Saves towers to `models/towers/` via `trainer.save_towers()`
+- Builds FAISS index via `RetrievalPipeline.build_index_from_model()` → saves to `models/index/`
+- `--skip-index` flag to skip index build; all paths configurable via CLI args
 
 ---
 
