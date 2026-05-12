@@ -75,41 +75,22 @@ user_id | item_id | item_type | signal | timestamp | session_id
 ## ✅ Phase 3: Training
 
 ### ✅ 3.1 `src/training/losses.py` — DONE
-```python
-def infonce_loss(user_emb, item_emb, temperature=0.07):
-    # scores: (batch, batch) dot product matrix
-    # labels: diagonal (positive pairs)
-    # loss: mean(softmax_cross_entropy over rows)
-
-def mixed_negative_loss(user_emb, item_emb, item_types, temperature):
-    # 60% in-batch same type
-    # 30% random cross-type
-    # 10% hard negative (top-k excluding positives)
-```
+- `infonce_loss(user_emb, item_emb, temperature, signal_weights)` — standard InfoNCE over in-batch negatives; optional float[B] signal weights normalised so mean=1 (preserves loss scale)
+- `mixed_negative_loss(user_emb, item_emb, item_types, temperature)` — same InfoNCE base + hard negative mining: top-10% highest-scoring cross-type items per row get +0.5 log-space logit boost (≈1.65× denominator weight), implemented via `tf.one_hot` scatter to avoid ragged ops
 
 ### ✅ 3.2 `src/training/dataset.py` — DONE
-```python
-def build_tf_dataset(interactions_df, item_features, user_features, config):
-    # Stratified batch: sample พอๆ กันต่อ item type
-    # Prefetch + cache สำหรับ performance
-    # Returns tf.data.Dataset
-
-def stratified_batch_sampler(df, batch_size, item_types):
-    # sample batch_size // num_types จากแต่ละ type
-```
+- `stratified_batch_sampler(df, batch_size, item_types, type_col, seed)` — standalone infinite generator over interaction DataFrame; yields `pd.DataFrame` batches with `batch_size // num_types` rows per type
+- `StratifiedInteractionDataset` — pre-materialises all interaction features into flat numpy arrays (fast int-indexed lookups); context (day/hour sin/cos) derived from interaction timestamp; unified item feature dict (union of all 4 schemas, zero/−1 padding for N/A type fields); `build(split, batch_size, val_fraction, seed)` returns infinite train or finite val `tf.data.Dataset`; output signature inferred from pre-materialised array dtypes/shapes
+- Padding sizes: `MAX_TRAVEL_STYLES=5`, `MAX_TRAVEL_THEMES=15`, `MAX_CAT_PREF=10`, `MAX_SUBCAT_INDICES=10`, `MAX_CATEGORY_INDICES=3`, `MAX_AMENITY_INDICES=24`
 
 ### ✅ 3.3 `src/training/trainer.py` — DONE
-```python
-class TwoTowerTrainer:
-    def train_step(self, batch):
-        # Forward pass ทุก item type ใน batch
-        # Compute mixed_negative_loss
-        # Backward + optimizer step
-        # Track metrics per type
+- `TwoTowerTrainer(model, config, checkpoint_dir)` — Adam optimiser, optional `clipnorm`
+- `train_step(batch)` — single `GradientTape` covers all 4 towers; boolean-masks batch per type, forward-passes each tower, concatenates all embeddings, calls `mixed_negative_loss` once; returns `loss` + `loss_{type}` per-type InfoNCE (diagnostic, no extra backward pass)
+- `eval_step(batch)` — same forward without tape
+- `train(train_ds, val_ds, epochs, steps_per_epoch)` — calls `next(iter(train_ds))` per step; prints loss + elapsed time per epoch; saves `model.save_weights` checkpoint per epoch; returns history dict
+- `save_towers(output_dir)` — saves `user_tower` + `{type}_tower` weights to separate subdirs for serving
 
-    def train(self, dataset, epochs):
-        # Training loop + validation + checkpoint
-```
+> **Design note:** single joint `GradientTape` is mandatory — training towers separately would pull user embedding in conflicting directions.
 
 ---
 
