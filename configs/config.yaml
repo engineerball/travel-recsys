@@ -1,0 +1,94 @@
+# ============================================================
+# Travel Recommendation System — Configuration
+# ============================================================
+
+# --- Embedding dimensions ---
+embedding:
+  text_embed_input_dim: 768      # Gemma MRL output dim (truncated)
+  text_embed_output_dim: 64      # trainable projection target
+  country_embed_dim: 16
+  style_embed_dim: 16
+  theme_embed_dim: 16
+  category_embed_dim: 16
+  subcat_embed_dim: 16
+  tower_output_dim: 64           # shared embedding space (all towers)
+
+# --- Vocabulary sizes (update after fitting on real data) ---
+vocab:
+  num_countries: 50
+  num_travel_styles: 12
+  num_travel_themes: 20
+  num_categories: 30
+  num_subcategories: 80
+  num_regions: 8                 # ภาคของไทย
+  num_provinces: 77
+
+# --- Item type IDs ---
+item_types:
+  attraction: 0
+  restaurant: 1
+  event: 2
+  accommodation: 3
+  shop: 4
+  article: 5
+
+# --- Model architecture ---
+model:
+  user_tower_hidden: [256, 128]
+  item_tower_hidden: [256, 128]
+  dropout_rate: 0.1
+  temperature: 0.07              # InfoNCE temperature
+
+# --- Training ---
+training:
+  batch_size: 512
+  epochs: 20
+  learning_rate: 0.001
+  negative_mix:
+    in_batch_same_type: 0.6
+    random_cross_type: 0.3
+    hard_negative: 0.1
+  signal_weights:
+    view: 1.0
+    like: 3.0
+    bookmark: 4.0
+
+# --- Behavior generation ---
+behavior:
+  num_users: 10000
+  interactions_per_user_min: 5
+  interactions_per_user_max: 50
+  popularity_power: 0.7          # power law exponent
+  personas:
+    - name: backpacker
+      weight: 0.25
+      preferred_themes: [adventure, nature, budget]
+      price_sensitivity: 0.9     # ชอบฟรี/ราคาถูก
+      travel_radius_km: 300
+    - name: family
+      weight: 0.25
+      preferred_themes: [family, education, nature]
+      price_sensitivity: 0.5
+      travel_radius_km: 100
+    - name: culture_seeker
+      weight: 0.20
+      preferred_themes: [culture, history, art]
+      price_sensitivity: 0.4
+      travel_radius_km: 400
+    - name: foodie
+      weight: 0.15
+      preferred_themes: [gastronomy, local_food]
+      price_sensitivity: 0.3
+      travel_radius_km: 50
+    - name: luxury
+      weight: 0.15
+      preferred_themes: [wellness, gastronomy, luxury]
+      price_sensitivity: 0.05
+      travel_radius_km: 500
+
+# --- Data paths ---
+paths:
+  raw_data: data/raw
+  processed_data: data/processed
+  generated_data: data/generated
+  model_checkpoints: checkpoints
