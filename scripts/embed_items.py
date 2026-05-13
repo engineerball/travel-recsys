@@ -151,12 +151,18 @@ def embed_texts_vertex(
     location: str = "us-central1",
     model_name: str = "text-embedding-004",
     truncate_dim: int = 256,
-    batch_size: int = 250,      # Vertex AI limit per call
+    batch_size: int = 50,       # conservative: 50 × ~300 tokens ≈ 15,000 < 20,000 limit
+    max_chars_per_text: int = 1500,  # ~375 tokens; keeps total well under 20,000/batch
 ) -> np.ndarray:
     """Embed texts via Vertex AI SDK using Application Default Credentials.
 
     On Vertex AI Workbench the instance service account is used automatically.
     Locally, run `gcloud auth application-default login` first.
+
+    Vertex AI text-embedding-004 limits:
+        20,000 tokens per request (total across all texts in batch)
+        2,048 tokens per individual text
+    Default batch_size=50 + max_chars_per_text=1500 keeps well under both limits.
     """
     try:
         import vertexai
@@ -165,8 +171,12 @@ def embed_texts_vertex(
         raise ImportError("Run: uv add google-cloud-aiplatform")
 
     print(f"  Vertex AI project={project} location={location} model={model_name}")
+    print(f"  batch_size={batch_size}  max_chars_per_text={max_chars_per_text}")
     vertexai.init(project=project, location=location)
     model = TextEmbeddingModel.from_pretrained(model_name)
+
+    # Truncate texts to stay within per-text and per-request token limits
+    texts = [t[:max_chars_per_text] if len(t) > max_chars_per_text else t for t in texts]
 
     n = len(texts)
     all_embeddings: List[np.ndarray] = []
@@ -262,8 +272,10 @@ def main() -> None:
                         help="Vertex AI region (default: us-central1)")
     parser.add_argument("--vertex-model", default="text-embedding-004",
                         help="Vertex AI embedding model name")
-    parser.add_argument("--vertex-batch-size", type=int, default=250,
-                        help="Texts per Vertex AI call (max 250)")
+    parser.add_argument("--vertex-batch-size", type=int, default=50,
+                        help="Texts per Vertex AI call (keep low; 20k token/request limit)")
+    parser.add_argument("--vertex-max-chars", type=int, default=1500,
+                        help="Truncate each text to this many chars before sending (~375 tokens)")
     # Local backend options
     parser.add_argument("--local-model", default="google/embeddinggemma-300m",
                         help="HuggingFace model ID for local backend")
@@ -325,6 +337,7 @@ def main() -> None:
                 model_name=args.vertex_model,
                 truncate_dim=args.truncate_dim,
                 batch_size=args.vertex_batch_size,
+                max_chars_per_text=args.vertex_max_chars,
             )
         else:
             embeddings = embed_texts_local(
