@@ -43,6 +43,7 @@ from src.data.schema import (
     ItemType,
     NUM_ATTRACTION_SUBCATS,
     NUM_ITEM_CATEGORIES,
+    NUM_PROVINCES,
 )
 from src.models.two_tower import TwoTowerModel
 from src.serving.retrieval import MultiTypeIndex, RetrievalPipeline
@@ -165,6 +166,12 @@ def _build_user_features(
             np.asarray(
                 user_row.get("subcat_affinity",
                              np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)),
+                dtype=np.float32,
+            ).reshape(1, -1),
+        "province_affinity":
+            np.asarray(
+                user_row.get("province_affinity",
+                             np.zeros(NUM_PROVINCES, dtype=np.float32)),
                 dtype=np.float32,
             ).reshape(1, -1),
         "context_day_sin":
