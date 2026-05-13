@@ -44,6 +44,7 @@ training:
   batch_size: 512
   epochs: 40
   steps_per_epoch: 50
+  patience: 10
   learning_rate: 0.001
   negative_mix:
     in_batch_same_type: 0.6

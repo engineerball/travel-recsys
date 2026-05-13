@@ -149,20 +149,34 @@ class TwoTowerTrainer:
         val_dataset: Optional[tf.data.Dataset] = None,
         epochs: int = 20,
         steps_per_epoch: int = 200,
+        patience: int = 10,
+        min_delta: float = 1e-4,
     ) -> Dict[str, List[float]]:
-        """Run the full training loop.
+        """Run the full training loop with early stopping on val_loss.
+
+        Saves best val checkpoint to ``{checkpoint_dir}/best/weights.weights.h5``.
+        Stops early if val_loss has not improved by ``min_delta`` for ``patience``
+        consecutive epochs. Early stopping only activates when val_dataset is provided.
 
         Args:
-            train_dataset: infinite tf.data.Dataset (from StratifiedInteractionDataset.build()).
+            train_dataset: infinite tf.data.Dataset.
             val_dataset: finite validation dataset; None to skip validation.
-            epochs: number of training epochs.
+            epochs: maximum training epochs.
             steps_per_epoch: gradient steps per epoch.
+            patience: epochs without improvement before stopping.
+            min_delta: minimum improvement to count as progress.
 
         Returns:
             History dict: ``{"train_loss": [...], "val_loss": [...]}``.
         """
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
+
+        best_val = float("inf")
+        epochs_no_improve = 0
+        best_epoch = 0
+        best_ckpt = os.path.join(self.checkpoint_dir, "best", "weights.weights.h5")
+        os.makedirs(os.path.dirname(best_ckpt), exist_ok=True)
 
         train_iter = iter(train_dataset)
 
@@ -171,7 +185,7 @@ class TwoTowerTrainer:
 
             # --- Training ---
             step_losses: List[float] = []
-            for step in range(steps_per_epoch):
+            for _ in range(steps_per_epoch):
                 batch = next(train_iter)
                 loss_tensor = self.train_step(batch)
                 step_losses.append(float(loss_tensor))
@@ -188,21 +202,40 @@ class TwoTowerTrainer:
 
             elapsed = time.time() - epoch_start
 
+            # --- Early stopping ---
+            stop_marker = ""
+            if avg_val is not None:
+                if avg_val < best_val - min_delta:
+                    best_val = avg_val
+                    best_epoch = epoch
+                    epochs_no_improve = 0
+                    self.model.save_weights(best_ckpt)
+                    stop_marker = " *"
+                else:
+                    epochs_no_improve += 1
+
             if avg_val is not None:
                 print(
                     f"Epoch {epoch:3d}/{epochs}  "
                     f"train_loss={avg_train:.4f}  val_loss={avg_val:.4f}  "
-                    f"({elapsed:.1f}s)"
+                    f"({elapsed:.1f}s){stop_marker}"
                 )
             else:
                 print(
                     f"Epoch {epoch:3d}/{epochs}  train_loss={avg_train:.4f}  ({elapsed:.1f}s)"
                 )
 
-            # --- Checkpoint ---
+            # --- Per-epoch checkpoint ---
             ckpt_path = os.path.join(self.checkpoint_dir, f"epoch_{epoch:03d}", "weights.weights.h5")
             os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
             self.model.save_weights(ckpt_path)
+
+            if val_dataset is not None and epochs_no_improve >= patience:
+                print(f"\nEarly stop at epoch {epoch} — best val={best_val:.4f} @ epoch {best_epoch}")
+                break
+
+        if val_dataset is not None:
+            print(f"Best checkpoint: {best_ckpt}  (epoch {best_epoch}, val={best_val:.4f})")
 
         return history
 
