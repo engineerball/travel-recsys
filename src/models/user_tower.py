@@ -13,8 +13,10 @@ from src.data.schema import (
     NUM_HOME_COUNTRIES,
     NUM_ITEM_CATEGORIES,
     NUM_PROVINCES,
+    NUM_REGIONS,
     NUM_TRAVEL_STYLES,
     NUM_TRAVEL_THEMES,
+    PROVINCE_IDX_TO_REGION_IDX,
 )
 
 
@@ -54,6 +56,9 @@ class UserTower(keras.Model):
         self.subcat_aff_proj = Dense(32, activation="relu")    # (58,) → (32,)
         self.art_type_aff_proj = Dense(16, activation="relu")   # (12,) → (16,)
         self.province_pref_emb = Embedding(NUM_PROVINCES, 8)    # top-k province indices → (8,)
+        self.region_pref_emb = Embedding(NUM_REGIONS, 8)        # derived region indices → (8,)
+        # Fixed lookup: province sequential idx → region idx (non-trainable)
+        self._prov_to_region = tf.constant(PROVINCE_IDX_TO_REGION_IDX, dtype=tf.int32)
 
         # Tower MLP head
         self.layer_norm = LayerNormalization()
@@ -111,6 +116,13 @@ class UserTower(keras.Model):
             tf.cast(inputs["article_type_affinity"], tf.float32)
         )
         prov_pref = self._masked_mean_pool(inputs["province_pref_indices"], self.province_pref_emb)
+        # Derive region indices from province indices via fixed lookup, then embed
+        prov_idx = inputs["province_pref_indices"]          # [B, 3], -1=padding
+        safe_prov = tf.maximum(prov_idx, 0)
+        region_idx = tf.gather(self._prov_to_region, safe_prov)  # [B, 3]
+        # Re-apply original padding mask so padded slots stay zeroed
+        region_idx = tf.where(prov_idx >= 0, region_idx, tf.fill(tf.shape(region_idx), -1))
+        region_pref = self._masked_mean_pool(region_idx, self.region_pref_emb)
         # Cyclical context features
         day_sin = tf.expand_dims(tf.cast(inputs["context_day_sin"], tf.float32), -1)
         day_cos = tf.expand_dims(tf.cast(inputs["context_day_cos"], tf.float32), -1)
@@ -121,7 +133,7 @@ class UserTower(keras.Model):
         x = tf.concat(
             [
                 age, country, style, theme, cat_pref,
-                cat_hist, subcat_aff, art_type_aff, prov_pref,
+                cat_hist, subcat_aff, art_type_aff, prov_pref, region_pref,
                 day_sin, day_cos, hour_sin, hour_cos,
             ],
             axis=-1,

@@ -29,6 +29,7 @@ from src.data.schema import (
     HOME_COUNTRY_TO_IDX,
     PRICE_TIER_THRESHOLDS,
     PROVINCE_ID_TO_IDX,
+    PROVINCE_IDX_TO_REGION_IDX,
     THAI_DAY_TO_DOW,
     TRAVEL_STYLES,
     TRAVEL_STYLE_TO_IDX,
@@ -282,6 +283,16 @@ def preprocess_users(
 # Attraction (destinations) preprocessing
 # ---------------------------------------------------------------------------
 
+def _province_id_to_region_idx(province_id_series: pd.Series) -> pd.Series:
+    """Map raw province_id → sequential province_idx → region_idx (0-4)."""
+    return (
+        province_id_series
+        .apply(lambda x: PROVINCE_ID_TO_IDX.get(int(x), 0) if pd.notna(x) else 0)
+        .apply(lambda idx: PROVINCE_IDX_TO_REGION_IDX[idx])
+        .astype("int32")
+    )
+
+
 def _parse_opening_hours(arr) -> List[float]:
     """openingHours ndarray of JSON strings → 7-dim binary float list."""
     vec = [0.0] * 7
@@ -330,6 +341,7 @@ def preprocess_attractions(df: pd.DataFrame) -> pd.DataFrame:
         .apply(lambda x: PROVINCE_ID_TO_IDX.get(int(x), 0) if pd.notna(x) else 0)
         .astype("int32")
     )
+    out["region_id"] = _province_id_to_region_idx(df["province_id"])
 
     out["days_open_vector"] = df["openingHours"].apply(_parse_opening_hours)
 
@@ -401,6 +413,7 @@ def preprocess_accommodations(
         .apply(lambda x: PROVINCE_ID_TO_IDX.get(int(x), 0) if pd.notna(x) else 0)
         .astype("int32")
     )
+    out["region_id"] = _province_id_to_region_idx(df["province_id"])
 
     prices = df["minPrice"].apply(lambda x: float(x) if x is not None else 0.0)
     out["price_tier_id"] = prices.apply(_price_to_tier).astype("int32")
@@ -465,6 +478,7 @@ def preprocess_events(
         .apply(lambda x: PROVINCE_ID_TO_IDX.get(int(x), 0) if pd.notna(x) else 0)
         .astype("int32")
     )
+    out["region_id"] = _province_id_to_region_idx(df["province_id"])
 
     # Duration: clip negatives to 0 before normalizing
     duration_raw = (df["endDate"] - df["startDate"]).dt.days.clip(lower=0).fillna(0)

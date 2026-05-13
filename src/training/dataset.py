@@ -218,6 +218,7 @@ class StratifiedInteractionDataset:
             "item_type_id": np.zeros(N, dtype=np.int32),
             "text_embed": np.zeros((N, TEXT_DIM), dtype=np.float32),
             "province_id": np.zeros(N, dtype=np.int32),
+            "region_id": np.zeros(N, dtype=np.int32),
             "log_view_count": np.zeros(N, dtype=np.float32),
             # attraction
             "sub_category_indices": np.full((N, MAX_SUBCAT_INDICES), -1, dtype=np.int32),
@@ -257,6 +258,9 @@ class StratifiedInteractionDataset:
 
             if "province_id" in df.columns:
                 iv["province_id"][tidx] = tdf["province_id"].values.astype(np.int32)
+
+            if "region_id" in df.columns:
+                iv["region_id"][tidx] = tdf["region_id"].values.astype(np.int32)
 
             if "log_view_count" in df.columns:
                 iv["log_view_count"][tidx] = tdf["log_view_count"].values.astype(np.float32)

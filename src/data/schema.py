@@ -46,6 +46,25 @@ NUM_PROVINCES = len(PROVINCE_IDS)  # 77; index 0–76, unknown → 0
 
 
 # ---------------------------------------------------------------------------
+# Region vocabulary (5 Thai regions derived from TAT province ID prefix)
+# ---------------------------------------------------------------------------
+
+# Regions in sequential index order
+REGIONS: List[str] = ["North", "Central", "South", "East", "Northeast"]
+NUM_REGIONS = len(REGIONS)  # 5; index 0=N, 1=C, 2=S, 3=E, 4=NE
+
+# Sequential province index (0–76) → region index (0–4)
+# TAT prefix: 1xx→North(17), 2xx→Central(22), 3xx→South(14), 4xx→East(4), 5xx→NE(20)
+PROVINCE_IDX_TO_REGION_IDX: List[int] = (
+    [0] * 17 +   # idx 0-16  → North
+    [1] * 22 +   # idx 17-38 → Central
+    [2] * 14 +   # idx 39-52 → South
+    [3] * 4  +   # idx 53-56 → East
+    [4] * 20     # idx 57-76 → Northeast
+)
+
+
+# ---------------------------------------------------------------------------
 # Attraction sub-category vocabulary (58 types)
 # ---------------------------------------------------------------------------
 

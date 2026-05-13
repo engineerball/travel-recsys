@@ -23,6 +23,7 @@ from src.data.schema import (
     NUM_ITEM_TYPES,
     NUM_PRICE_TIERS,
     NUM_PROVINCES,
+    NUM_REGIONS,
 )
 
 
@@ -48,8 +49,9 @@ class BaseItemTower(keras.Model):
         self.text_proj = Dense(config.output_dim)  # 256 → 64
         self.item_type_emb = Embedding(NUM_ITEM_TYPES, config.item_type_emb_dim)
 
-        # Shared province embedding used by Attraction / Accommodation / Event
+        # Shared province + region embeddings used by Attraction / Accommodation / Event
         self.province_emb = Embedding(NUM_PROVINCES, config.province_emb_dim)
+        self.region_emb = Embedding(NUM_REGIONS, 8)
 
         # Tower MLP head (subclasses reuse this)
         self.dense1 = Dense(256, activation="relu")
@@ -131,10 +133,11 @@ class AttractionTower(BaseItemTower):
     def _type_features(self, inputs: dict) -> tf.Tensor:
         subcat = self._masked_mean_pool(inputs["sub_category_indices"], self.subcat_emb)
         province = self.province_emb(inputs["province_id"])
+        region = self.region_emb(inputs["region_id"])
         days = tf.cast(inputs["days_open_vector"], tf.float32)
         is_free = tf.expand_dims(tf.cast(inputs["is_free"], tf.float32), -1)
         log_view = tf.expand_dims(tf.cast(inputs["log_view_count"], tf.float32), -1)
-        return tf.concat([subcat, province, days, is_free, log_view], axis=-1)
+        return tf.concat([subcat, province, region, days, is_free, log_view], axis=-1)
 
 
 class AccommodationTower(BaseItemTower):
@@ -161,11 +164,12 @@ class AccommodationTower(BaseItemTower):
     def _type_features(self, inputs: dict) -> tf.Tensor:
         amenity = self._masked_mean_pool(inputs["amenity_indices"], self.amenity_emb)
         province = self.province_emb(inputs["province_id"])
+        region = self.region_emb(inputs["region_id"])
         price_tier = self.price_tier_emb(inputs["price_tier_id"])
         is_missing = tf.expand_dims(tf.cast(inputs["is_price_missing"], tf.float32), -1)
         star = tf.expand_dims(tf.cast(inputs["star_rating_norm"], tf.float32), -1)
         log_view = tf.expand_dims(tf.cast(inputs["log_view_count"], tf.float32), -1)
-        return tf.concat([amenity, province, price_tier, is_missing, star, log_view], axis=-1)
+        return tf.concat([amenity, province, region, price_tier, is_missing, star, log_view], axis=-1)
 
 
 class EventTower(BaseItemTower):
@@ -190,10 +194,11 @@ class EventTower(BaseItemTower):
     def _type_features(self, inputs: dict) -> tf.Tensor:
         category = self._masked_mean_pool(inputs["category_indices"], self.category_emb)
         province = self.province_emb(inputs["province_id"])
+        region = self.region_emb(inputs["region_id"])
         duration = tf.expand_dims(tf.cast(inputs["duration_days_norm"], tf.float32), -1)
         month_sin = tf.expand_dims(tf.cast(inputs["month_sin"], tf.float32), -1)
         month_cos = tf.expand_dims(tf.cast(inputs["month_cos"], tf.float32), -1)
-        return tf.concat([category, province, duration, month_sin, month_cos], axis=-1)
+        return tf.concat([category, province, region, duration, month_sin, month_cos], axis=-1)
 
 
 class ArticleTower(BaseItemTower):
