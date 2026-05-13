@@ -117,18 +117,23 @@ def main() -> None:
 
     # --- Compute behavior features ---
     print("\nComputing user behavior features …")
-    from src.data.preprocessing import preprocess_attractions, preprocess_events
+    from src.data.preprocessing import preprocess_attractions, preprocess_accommodations, preprocess_events
     import glob as _glob
 
     attr_files = sorted(_glob.glob(os.path.join(args.raw_dir, "destinations", "*.parquet")))
     evt_files = sorted(_glob.glob(os.path.join(args.raw_dir, "activities", "*.parquet")))
+    accom_files = sorted(_glob.glob(os.path.join(args.raw_dir, "accommodations", "*.parquet")))
     attr_raw = pd.concat([pd.read_parquet(f) for f in attr_files], ignore_index=True)
     evt_raw = pd.concat([pd.read_parquet(f) for f in evt_files], ignore_index=True)
+    accom_raw = pd.concat([pd.read_parquet(f) for f in accom_files], ignore_index=True) if accom_files else None
 
     attraction_prepped = preprocess_attractions(attr_raw)
     event_prepped = preprocess_events(evt_raw)
+    accom_prepped = preprocess_accommodations(accom_raw) if accom_raw is not None else None
 
-    behavior_features = compute_behavior_features(interactions, attraction_prepped, event_prepped)
+    behavior_features = compute_behavior_features(
+        interactions, attraction_prepped, event_prepped, accom_prepped
+    )
     print(f"  Behavior features for {len(behavior_features)} users")
 
     # --- Build enriched user features ---
