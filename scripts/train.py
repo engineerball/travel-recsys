@@ -190,7 +190,7 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", default="checkpoints")
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--steps-per-epoch", type=int, default=200)
+    parser.add_argument("--steps-per-epoch", type=int, default=50)
     parser.add_argument("--skip-index", action="store_true",
                         help="Skip FAISS index building after training")
     args = parser.parse_args()
@@ -203,6 +203,7 @@ def main() -> None:
 
     epochs = args.epochs or int(train_cfg.get("epochs", 20))
     batch_size = args.batch_size or int(train_cfg.get("batch_size", 512))
+    steps_per_epoch = args.steps_per_epoch or int(train_cfg.get("steps_per_epoch", 50))
     lr = float(train_cfg.get("learning_rate", 1e-3))
     temperature = float(model_cfg.get("temperature", 0.07))
     dropout_rate = float(model_cfg.get("dropout_rate", 0.1))
@@ -245,7 +246,7 @@ def main() -> None:
     )
     train_ds = dataset.build(batch_size=batch_size, split="train")
     val_ds = dataset.build(batch_size=batch_size, split="val")
-    print(f"  batch_size={batch_size}, epochs={epochs}, steps_per_epoch={args.steps_per_epoch}")
+    print(f"  batch_size={batch_size}, epochs={epochs}, steps_per_epoch={steps_per_epoch}")
 
     # --- Initialize model ---
     print("\nInitializing TwoTowerModel …")
@@ -268,7 +269,7 @@ def main() -> None:
         train_dataset=train_ds,
         val_dataset=val_ds,
         epochs=epochs,
-        steps_per_epoch=args.steps_per_epoch,
+        steps_per_epoch=steps_per_epoch,
     )
 
     # --- Save towers ---

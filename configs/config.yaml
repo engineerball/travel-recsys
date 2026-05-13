@@ -36,13 +36,14 @@ item_types:
 model:
   user_tower_hidden: [256, 128]
   item_tower_hidden: [256, 128]
-  dropout_rate: 0.1
+  dropout_rate: 0.3
   temperature: 0.07              # InfoNCE temperature
 
 # --- Training ---
 training:
   batch_size: 512
-  epochs: 20
+  epochs: 40
+  steps_per_epoch: 50
   learning_rate: 0.001
   negative_mix:
     in_batch_same_type: 0.6
