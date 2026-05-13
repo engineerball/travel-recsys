@@ -38,9 +38,6 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-tf.random.set_seed(42)
-np.random.seed(42)
-
 from src.data.preprocessing import (
     preprocess_articles,
     preprocess_attractions,
