@@ -57,6 +57,7 @@ class TwoTowerModel(keras.Model):
             ItemType.EVENT: self.event_tower,
             ItemType.ARTICLE: self.article_tower,
         }
+        self.built = True
 
     def call(
         self,

@@ -57,6 +57,7 @@ class UserTower(keras.Model):
         self.dense2 = Dense(128, activation="relu")
         self.output_proj = Dense(config.output_dim)
         self.dropout = Dropout(dropout_rate)
+        self.built = True
 
     @staticmethod
     def _masked_mean_pool(indices: tf.Tensor, emb_layer: Embedding) -> tf.Tensor:

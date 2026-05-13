@@ -237,7 +237,7 @@ class TwoTowerTrainer:
                 )
 
             # --- Checkpoint ---
-            ckpt_path = os.path.join(self.checkpoint_dir, f"epoch_{epoch:03d}", "weights")
+            ckpt_path = os.path.join(self.checkpoint_dir, f"epoch_{epoch:03d}", "weights.weights.h5")
             os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
             self.model.save_weights(ckpt_path)
 
@@ -258,7 +258,9 @@ class TwoTowerTrainer:
         """
         os.makedirs(output_dir, exist_ok=True)
 
-        self.model.user_tower.save_weights(os.path.join(output_dir, "user_tower", "weights"))
+        user_tower_dir = os.path.join(output_dir, "user_tower")
+        os.makedirs(user_tower_dir, exist_ok=True)
+        self.model.user_tower.save_weights(os.path.join(user_tower_dir, "weights.weights.h5"))
 
         for itype in ItemType:
             tower_attr = f"{itype.name.lower()}_tower"
@@ -266,6 +268,6 @@ class TwoTowerTrainer:
             if tower is not None:
                 tower_dir = os.path.join(output_dir, "item_towers", itype.name.lower())
                 os.makedirs(tower_dir, exist_ok=True)
-                tower.save_weights(os.path.join(tower_dir, "weights"))
+                tower.save_weights(os.path.join(tower_dir, "weights.weights.h5"))
 
         print(f"Towers saved to {output_dir}")
