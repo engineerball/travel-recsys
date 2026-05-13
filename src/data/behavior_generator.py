@@ -559,12 +559,17 @@ def compute_behavior_features(
             int(i) for i in np.argsort(-cat_hist)[:10] if cat_hist[i] > 0
         ]
 
+        prov_pref_indices = [
+            int(i) for i in np.argsort(-prov_aff)[:3] if prov_aff[i] > 0
+        ]
+
         rows.append({
             "user_id": uid,
             "category_pref_indices": pref_indices,
             "category_interaction_history": cat_hist_norm,
             "subcat_affinity": subcat_aff_norm,
             "province_affinity": prov_aff_norm,
+            "province_pref_indices": prov_pref_indices,
         })
 
     return pd.DataFrame(rows).set_index("user_id")

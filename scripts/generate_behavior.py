@@ -167,6 +167,11 @@ def main() -> None:
         if uid in behavior_features.index else zero_prov.copy()
         for uid in user_profile_features.index
     ]
+    user_profile_features["province_pref_indices"] = [
+        behavior_features.loc[uid, "province_pref_indices"]
+        if uid in behavior_features.index else []
+        for uid in user_profile_features.index
+    ]
 
     # --- Save outputs ---
     os.makedirs(args.output_dir, exist_ok=True)

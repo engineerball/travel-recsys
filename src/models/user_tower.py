@@ -51,7 +51,7 @@ class UserTower(keras.Model):
         # Dense projections for dense float behavior vectors
         self.cat_hist_proj = Dense(32, activation="relu")    # (69,) → (32,)
         self.subcat_aff_proj = Dense(32, activation="relu")  # (58,) → (32,)
-        self.prov_aff_proj = Dense(32, activation="relu")    # (77,) → (32,)
+        self.province_pref_emb = Embedding(NUM_PROVINCES, 8)  # top-k province indices → (8,)
 
         # Tower MLP head
         self.layer_norm = LayerNormalization()
@@ -105,9 +105,7 @@ class UserTower(keras.Model):
         subcat_aff = self.subcat_aff_proj(
             tf.cast(inputs["subcat_affinity"], tf.float32)
         )
-        prov_aff = self.prov_aff_proj(
-            tf.cast(inputs["province_affinity"], tf.float32)
-        )
+        prov_pref = self._masked_mean_pool(inputs["province_pref_indices"], self.province_pref_emb)
 
         # Cyclical context features
         day_sin = tf.expand_dims(tf.cast(inputs["context_day_sin"], tf.float32), -1)
@@ -119,7 +117,7 @@ class UserTower(keras.Model):
         x = tf.concat(
             [
                 age, country, style, theme, cat_pref,
-                cat_hist, subcat_aff, prov_aff,
+                cat_hist, subcat_aff, prov_pref,
                 day_sin, day_cos, hour_sin, hour_cos,
             ],
             axis=-1,
