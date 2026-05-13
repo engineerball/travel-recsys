@@ -27,6 +27,7 @@ from src.data.schema import (
 MAX_TRAVEL_STYLES: int = 5
 MAX_TRAVEL_THEMES: int = 15
 MAX_CAT_PREF: int = 10        # top category preference indices per user
+MAX_PROVINCE_PREF: int = 3    # top province indices per user
 MAX_SUBCAT_INDICES: int = 10  # attraction sub-categories
 MAX_CATEGORY_INDICES: int = 3  # event categories
 MAX_AMENITY_INDICES: int = 24  # accommodation amenities (full vocab fits)
@@ -197,6 +198,7 @@ class StratifiedInteractionDataset:
             ),
             "subcat_affinity": _to_float32_stack(udf["subcat_affinity"], NUM_ATTRACTION_SUBCATS),
             "article_type_affinity": _to_float32_stack(udf["article_type_affinity"], NUM_ARTICLE_TYPES),
+            "province_pref_indices": _pad_column(udf["province_pref_indices"], MAX_PROVINCE_PREF),
         }
 
         # ------ Item features (union of all type schemas) ------

@@ -43,6 +43,7 @@ from src.models.two_tower import TwoTowerModel
 from src.serving.retrieval import MultiTypeIndex
 from src.training.dataset import (
     MAX_CAT_PREF,
+    MAX_PROVINCE_PREF,
     MAX_TRAVEL_STYLES,
     MAX_TRAVEL_THEMES,
     _pad_seq,
@@ -143,6 +144,8 @@ def build_user_features(user_row: pd.Series, dow: float = 2.0, hod: float = 14.0
                              np.zeros(NUM_ARTICLE_TYPES, dtype=np.float32)),
                 dtype=np.float32,
             ).reshape(1, -1),
+        "province_pref_indices":
+            _pad(user_row.get("province_pref_indices", []), MAX_PROVINCE_PREF),
         "context_day_sin": np.array([math.sin(2 * math.pi * dow / 7)], dtype=np.float32),
         "context_day_cos": np.array([math.cos(2 * math.pi * dow / 7)], dtype=np.float32),
         "context_hour_sin": np.array([math.sin(2 * math.pi * hod / 24)], dtype=np.float32),

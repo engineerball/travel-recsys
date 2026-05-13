@@ -467,6 +467,79 @@ class InteractionGenerator:
 
 
 # ---------------------------------------------------------------------------
+# User profile augmentation
+# ---------------------------------------------------------------------------
+
+def augment_user_profiles(
+    df: pd.DataFrame,
+    target_n: int,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Bootstrap-augment user profiles to target_n rows.
+
+    Preserves travel_style and travel_theme (keeps persona diversity).
+    Perturbs demographics: age (±5 gaussian), home_province (random resample),
+    home_country (20% random reassign), preferred_time_start_at (random).
+
+    Args:
+        df: raw user_profiles DataFrame with at least user_id, age,
+            home_country, travel_style, travel_theme, home_province,
+            preferred_time_start_at columns.
+        target_n: desired total number of users (including original rows).
+        seed: random seed.
+
+    Returns:
+        DataFrame with target_n rows, original users first then augmented.
+    """
+    from src.data.schema import HOME_COUNTRIES
+
+    if len(df) >= target_n:
+        return df.reset_index(drop=True)
+
+    rng = np.random.default_rng(seed)
+    n_aug = target_n - len(df)
+
+    # Province pool: all unique home_province values that exist in the data
+    province_pool = df["home_province"].dropna().unique().tolist()
+    if not province_pool:
+        province_pool = ["กรุงเทพมหานคร"]
+
+    # Preferred time range (06:00–22:00 on random days)
+    _t0 = pd.Timestamp("2024-01-01 06:00:00")
+    _t1 = pd.Timestamp("2025-06-30 22:00:00")
+    delta_minutes = int((_t1 - _t0).total_seconds() / 60)
+
+    base_rows = df.sample(n=n_aug, replace=True, random_state=int(rng.integers(0, 2**31)))
+    augmented = base_rows.copy().reset_index(drop=True)
+
+    # New unique user_ids
+    augmented["user_id"] = [f"aug_{i:06d}" for i in range(n_aug)]
+
+    # Age perturbation: ±5 gaussian, clip to [18, 75]
+    age_noise = rng.normal(0, 5, size=n_aug)
+    augmented["age"] = np.clip(
+        augmented["age"].values.astype(float) + age_noise, 18, 75
+    ).astype(int)
+
+    # home_province: random resample from pool (forces geographic diversity)
+    augmented["home_province"] = rng.choice(province_pool, size=n_aug)
+
+    # home_country: 80% keep, 20% random
+    replace_mask = rng.random(size=n_aug) < 0.20
+    augmented.loc[replace_mask, "home_country"] = rng.choice(
+        HOME_COUNTRIES, size=int(replace_mask.sum())
+    )
+
+    # preferred_time_start_at: random
+    rand_minutes = rng.integers(0, delta_minutes, size=n_aug)
+    augmented["preferred_time_start_at"] = [
+        _t0 + pd.Timedelta(minutes=int(m)) for m in rand_minutes
+    ]
+
+    return pd.concat([df, augmented], ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
 # User behavior feature computation
 # ---------------------------------------------------------------------------
 

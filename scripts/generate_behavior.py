@@ -31,6 +31,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data.behavior_generator import (
+    augment_user_profiles,
     BehaviorDataset,
     InteractionGenerator,
     compute_behavior_features,
@@ -63,6 +64,8 @@ def main() -> None:
     parser.add_argument("--output-dir", default="data/generated")
     parser.add_argument("--n-users", type=int, default=None,
                         help="Max users to use (capped at available rows in user_profiles)")
+    parser.add_argument("--augment-users", type=int, default=None,
+                        help="Augment user profiles to this total count via bootstrap perturbation")
     parser.add_argument("--ipp-min", type=int, default=None,
                         help="Min interactions per user (overrides config)")
     parser.add_argument("--ipp-max", type=int, default=None,
@@ -97,6 +100,12 @@ def main() -> None:
     # Cap to available rows
     if n_users and n_users < len(user_raw):
         user_raw = user_raw.head(n_users).reset_index(drop=True)
+
+    # Augment user profiles if requested
+    if args.augment_users and args.augment_users > len(user_raw):
+        user_raw = augment_user_profiles(user_raw, args.augment_users, seed=args.seed)
+        print(f"  Augmented to {len(user_raw)} users")
+
     print(f"  Using {len(user_raw)} users (ipp={ipp_min}–{ipp_max})")
 
     # --- Generate interactions ---
