@@ -305,15 +305,15 @@ class StratifiedInteractionDataset:
     ) -> tf.data.Dataset:
         """Return a ``tf.data.Dataset`` of stratified batches.
 
-        Training dataset is infinite (repeat forever); call ``.take(steps_per_epoch)``
-        in the training loop.  Validation dataset performs a single full pass.
+        Uses tf.constant + tf.gather (no Python generator) so GPU never starves.
+        Training dataset is infinite; call ``.take(steps_per_epoch)`` in trainer.
+        Validation dataset performs a single full pass.
 
         Args:
-            batch_size: total samples per batch (divided equally across 4 item types).
+            batch_size: total samples per batch (divided equally across item types).
             split: ``"train"`` or ``"val"``.
-            val_fraction: fraction of interactions reserved for validation
-                (chronological split — last *val_fraction* of rows).
-            seed: numpy random seed.
+            val_fraction: fraction of interactions reserved for validation.
+            seed: random seed for shuffle.
 
         Returns:
             ``tf.data.Dataset`` yielding
@@ -323,80 +323,52 @@ class StratifiedInteractionDataset:
         n_val = max(4, int(N * val_fraction))
         is_train = split == "train"
 
-        if is_train:
-            active = np.arange(0, N - n_val)
-        else:
-            active = np.arange(N - n_val, N)
-
-        # Per-type pools within the active split
+        active = np.arange(0, N - n_val) if is_train else np.arange(N - n_val, N)
         active_types = self._arrays["item_type"][active]
-        type_pools: Dict[ItemType, np.ndarray] = {
-            itype: active[active_types == int(itype)] for itype in ItemType
-        }
 
-        indices_per_type = max(1, batch_size // len(ItemType))
-        rng = np.random.default_rng(seed)
+        # Convert all arrays to tf.constant once — no Python overhead per batch
+        u_t = {k: tf.constant(v) for k, v in self._arrays["user"].items()}
+        iv_t = {k: tf.constant(v) for k, v in self._arrays["item"].items()}
+        type_t = tf.constant(self._arrays["item_type"], dtype=tf.int32)
+        sw_t = tf.constant(self._arrays["signal_weights"], dtype=tf.float32)
 
-        u_arr = self._arrays["user"]
-        iv_arr = self._arrays["item"]
-        type_arr = self._arrays["item_type"]
-        sw_arr = self._arrays["signal_weights"]
+        def _gather(idx: tf.Tensor):
+            return (
+                {k: tf.gather(v, idx) for k, v in u_t.items()},
+                {k: tf.gather(v, idx) for k, v in iv_t.items()},
+                tf.gather(type_t, idx),
+                tf.gather(sw_t, idx),
+            )
 
-        def _make_batch_idx() -> np.ndarray:
-            parts = []
+        if is_train:
+            indices_per_type = max(1, batch_size // len(ItemType))
+            type_index_ds: List[tf.data.Dataset] = []
             for itype in ItemType:
-                pool = type_pools[itype]
+                pool = active[active_types == int(itype)]
                 if len(pool) == 0:
                     continue
-                n = min(indices_per_type, len(pool))
-                chosen = rng.choice(pool, size=n, replace=len(pool) < n)
-                parts.append(chosen)
-            idx = np.concatenate(parts).astype(np.int64)
-            rng.shuffle(idx)
-            return idx
+                ds_idx = tf.data.Dataset.from_tensor_slices(
+                    tf.constant(pool, dtype=tf.int64)
+                )
+                ds_idx = (
+                    ds_idx
+                    .shuffle(len(pool), seed=seed, reshuffle_each_iteration=True)
+                    .repeat()
+                    .batch(indices_per_type, drop_remainder=True)
+                )
+                type_index_ds.append(ds_idx)
 
-        if is_train:
-            def gen():
-                while True:
-                    idx = _make_batch_idx()
-                    yield (
-                        {k: v[idx] for k, v in u_arr.items()},
-                        {k: v[idx] for k, v in iv_arr.items()},
-                        type_arr[idx],
-                        sw_arr[idx],
-                    )
+            def _merge_and_gather(*type_batches):
+                idx = tf.random.shuffle(tf.concat(type_batches, axis=0))
+                return _gather(idx)
+
+            ds = tf.data.Dataset.zip(tuple(type_index_ds))
+            ds = ds.map(_merge_and_gather, num_parallel_calls=tf.data.AUTOTUNE)
         else:
-            # Single pass over val set in stratified batches
-            def gen():
-                start = 0
-                while start < len(active):
-                    end = min(start + batch_size, len(active))
-                    idx = active[start:end]
-                    if len(idx) < 4:
-                        break
-                    yield (
-                        {k: v[idx] for k, v in u_arr.items()},
-                        {k: v[idx] for k, v in iv_arr.items()},
-                        type_arr[idx],
-                        sw_arr[idx],
-                    )
-                    start = end
+            ds = tf.data.Dataset.from_tensor_slices(
+                tf.constant(active, dtype=tf.int64)
+            )
+            ds = ds.batch(batch_size, drop_remainder=False)
+            ds = ds.map(_gather, num_parallel_calls=tf.data.AUTOTUNE)
 
-        # Build output signature from pre-materialised array shapes
-        u_sig = {
-            k: tf.TensorSpec(shape=(None,) + v.shape[1:], dtype=tf.as_dtype(v.dtype))
-            for k, v in u_arr.items()
-        }
-        iv_sig = {
-            k: tf.TensorSpec(shape=(None,) + v.shape[1:], dtype=tf.as_dtype(v.dtype))
-            for k, v in iv_arr.items()
-        }
-        sig = (
-            u_sig,
-            iv_sig,
-            tf.TensorSpec(shape=(None,), dtype=tf.int32),
-            tf.TensorSpec(shape=(None,), dtype=tf.float32),
-        )
-
-        ds = tf.data.Dataset.from_generator(gen, output_signature=sig)
         return ds.prefetch(tf.data.AUTOTUNE)

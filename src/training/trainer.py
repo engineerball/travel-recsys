@@ -74,88 +74,55 @@ class TwoTowerTrainer:
     # Train / eval steps
     # ------------------------------------------------------------------
 
-    def train_step(
-        self,
-        batch: tuple,
-    ) -> Dict[str, float]:
-        """Single gradient update step.
+    @tf.function
+    def train_step(self, batch: tuple) -> tf.Tensor:
+        """Single gradient update step compiled as TF graph (no Python overhead).
 
-        Args:
-            batch: 4-tuple ``(user_features, item_features, item_types, signal_weights)``
-                as produced by StratifiedInteractionDataset.
+        Stratified batches guarantee all item types present — no empty-mask guard needed.
 
         Returns:
-            dict with ``"loss"`` (joint) and ``"loss_{type}"`` (per-type InfoNCE) keys.
+            Scalar loss tensor (convert to float() in the caller).
         """
-        user_features, item_features, item_types, signal_weights = batch
+        user_features, item_features, item_types, _signal_weights = batch
 
         with tf.GradientTape() as tape:
             all_u: List[tf.Tensor] = []
             all_i: List[tf.Tensor] = []
-            all_types: List[tf.Tensor] = []
+            all_types_list: List[tf.Tensor] = []
 
-            # Per-type embeddings (also needed for per-type metric)
-            per_type_u: Dict[ItemType, tf.Tensor] = {}
-            per_type_i: Dict[ItemType, tf.Tensor] = {}
-
-            for itype in ItemType:
+            for itype in ItemType:  # unrolled at trace time
                 mask = tf.equal(item_types, int(itype))
-                # In eager mode, skip empty types immediately
-                if not tf.reduce_any(mask).numpy():
-                    continue
-
                 u_batch = self._mask_user(user_features, mask)
                 i_batch = self._mask_item(item_features, mask)
-
                 u_emb, i_emb = self.model(
                     {"user": u_batch, "item": i_batch},
                     training=True,
                     item_type=itype,
                 )
-
                 all_u.append(u_emb)
                 all_i.append(i_emb)
-                # Reconstruct item_type labels for the joint batch
-                all_types.append(tf.boolean_mask(item_types, mask))
-                per_type_u[itype] = u_emb
-                per_type_i[itype] = i_emb
+                all_types_list.append(tf.boolean_mask(item_types, mask))
 
-            if not all_u:
-                return {"loss": 0.0}
-
-            joint_u = tf.concat(all_u, axis=0)      # [B, 64]
-            joint_i = tf.concat(all_i, axis=0)      # [B, 64]
-            joint_types = tf.concat(all_types, axis=0)  # [B]
-
+            joint_u = tf.concat(all_u, axis=0)
+            joint_i = tf.concat(all_i, axis=0)
+            joint_types = tf.concat(all_types_list, axis=0)
             loss = mixed_negative_loss(joint_u, joint_i, joint_types, self.temperature)
 
         grads = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+        return loss
 
-        metrics: Dict[str, float] = {"loss": float(loss)}
-
-        # Per-type InfoNCE (no gradient needed — purely diagnostic)
-        for itype, u_emb in per_type_u.items():
-            i_emb = per_type_i[itype]
-            if tf.shape(u_emb)[0] > 1:
-                t_loss = infonce_loss(u_emb, i_emb, self.temperature)
-                metrics[f"loss_{itype.name.lower()}"] = float(t_loss)
-
-        return metrics
-
-    def eval_step(self, batch: tuple) -> Dict[str, float]:
-        """Forward pass without gradient update."""
+    @tf.function
+    def eval_step(self, batch: tuple) -> tf.Tensor:
+        """Forward pass without gradient update, compiled as TF graph."""
         user_features, item_features, item_types, _signal_weights = batch
 
         all_u: List[tf.Tensor] = []
         all_i: List[tf.Tensor] = []
-        all_types: List[tf.Tensor] = []
+        all_types_list: List[tf.Tensor] = []
 
-        for itype in ItemType:
+        for itype in ItemType:  # unrolled at trace time
             mask = tf.equal(item_types, int(itype))
-            if not tf.reduce_any(mask).numpy():
-                continue
-
             u_batch = self._mask_user(user_features, mask)
             i_batch = self._mask_item(item_features, mask)
             u_emb, i_emb = self.model(
@@ -165,16 +132,12 @@ class TwoTowerTrainer:
             )
             all_u.append(u_emb)
             all_i.append(i_emb)
-            all_types.append(tf.boolean_mask(item_types, mask))
-
-        if not all_u:
-            return {"loss": 0.0}
+            all_types_list.append(tf.boolean_mask(item_types, mask))
 
         joint_u = tf.concat(all_u, axis=0)
         joint_i = tf.concat(all_i, axis=0)
-        joint_types = tf.concat(all_types, axis=0)
-        loss = mixed_negative_loss(joint_u, joint_i, joint_types, self.temperature)
-        return {"loss": float(loss)}
+        joint_types = tf.concat(all_types_list, axis=0)
+        return mixed_negative_loss(joint_u, joint_i, joint_types, self.temperature)
 
     # ------------------------------------------------------------------
     # Full training loop
@@ -210,8 +173,8 @@ class TwoTowerTrainer:
             step_losses: List[float] = []
             for step in range(steps_per_epoch):
                 batch = next(train_iter)
-                metrics = self.train_step(batch)
-                step_losses.append(metrics["loss"])
+                loss_tensor = self.train_step(batch)
+                step_losses.append(float(loss_tensor))
 
             avg_train = float(np.mean(step_losses))
             history["train_loss"].append(avg_train)
@@ -219,7 +182,7 @@ class TwoTowerTrainer:
             # --- Validation ---
             avg_val: Optional[float] = None
             if val_dataset is not None:
-                val_losses = [self.eval_step(b)["loss"] for b in val_dataset]
+                val_losses = [float(self.eval_step(b)) for b in val_dataset]
                 avg_val = float(np.mean(val_losses)) if val_losses else float("nan")
                 history["val_loss"].append(avg_val)
 
