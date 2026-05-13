@@ -62,7 +62,12 @@ def main() -> None:
     parser.add_argument("--raw-dir", default="data/raw")
     parser.add_argument("--output-dir", default="data/generated")
     parser.add_argument("--n-users", type=int, default=None,
-                        help="Override behavior.num_users from config")
+                        help="Max users to use (capped at available rows in user_profiles)")
+    parser.add_argument("--ipp-min", type=int, default=None,
+                        help="Min interactions per user (overrides config)")
+    parser.add_argument("--ipp-max", type=int, default=None,
+                        help="Max interactions per user (overrides config). "
+                             "Increase this when n-users is capped, e.g. --ipp-max 200")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -71,8 +76,8 @@ def main() -> None:
 
     behavior_cfg = config.get("behavior", {})
     n_users = args.n_users or behavior_cfg.get("num_users", 1000)
-    ipp_min = int(behavior_cfg.get("interactions_per_user_min", 5))
-    ipp_max = int(behavior_cfg.get("interactions_per_user_max", 50))
+    ipp_min = args.ipp_min or int(behavior_cfg.get("interactions_per_user_min", 5))
+    ipp_max = args.ipp_max or int(behavior_cfg.get("interactions_per_user_max", 50))
     pop_power = float(behavior_cfg.get("popularity_power", 0.7))
 
     personas = load_personas_from_config(config)
@@ -89,10 +94,10 @@ def main() -> None:
     user_raw = _load_raw(os.path.join(args.raw_dir, "user_profiles"))
     print(f"  Users: {len(user_raw)} rows")
 
-    # Limit users to n_users (generator handles this too, but trim early for speed)
+    # Cap to available rows
     if n_users and n_users < len(user_raw):
         user_raw = user_raw.head(n_users).reset_index(drop=True)
-    print(f"  Using {len(user_raw)} users")
+    print(f"  Using {len(user_raw)} users (ipp={ipp_min}–{ipp_max})")
 
     # --- Generate interactions ---
     print(f"\nGenerating interactions (ipp={ipp_min}–{ipp_max}, power={pop_power}) …")
