@@ -57,8 +57,8 @@ training:
 # --- Behavior generation ---
 behavior:
   num_users: 1000
-  interactions_per_user_min: 50
-  interactions_per_user_max: 300
+  interactions_per_user_min: 30
+  interactions_per_user_max: 100
   popularity_power: 0.7          # power law exponent
   personas:
     - name: backpacker
