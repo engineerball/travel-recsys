@@ -18,6 +18,7 @@ from src.data.schema import (
     ItemType,
     NUM_ATTRACTION_SUBCATS,
     NUM_ITEM_CATEGORIES,
+    NUM_PROVINCES,
 )
 
 
@@ -473,6 +474,7 @@ def compute_behavior_features(
     interactions: pd.DataFrame,
     attraction_df: pd.DataFrame,
     event_df: pd.DataFrame,
+    accommodation_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Compute per-user behavior features from interaction history.
 
@@ -481,14 +483,16 @@ def compute_behavior_features(
 
     Args:
         interactions: output of InteractionGenerator.generate()
-        attraction_df: preprocessed attractions with place_id + sub_category_indices
-        event_df: preprocessed events with event_id + category_indices
+        attraction_df: preprocessed attractions with place_id + sub_category_indices + province_id
+        event_df: preprocessed events with event_id + category_indices + province_id
+        accommodation_df: preprocessed accommodations with place_id + province_id (optional)
 
     Returns:
         DataFrame indexed by user_id with columns:
             category_pref_indices         — int list, top-k ITEM_CATEGORY_VOCAB indices
             category_interaction_history  — float32 array (NUM_ITEM_CATEGORIES,)
             subcat_affinity               — float32 array (NUM_ATTRACTION_SUBCATS,)
+            province_affinity             — float32 array (NUM_PROVINCES,)
     """
     attr_lookup: Dict[str, List[int]] = {
         str(row["place_id"]): row["sub_category_indices"]
@@ -499,10 +503,22 @@ def compute_behavior_features(
         for _, row in event_df.iterrows()
     }
 
+    # province_id lookup: item_id → sequential province index (already mapped by preprocessing)
+    prov_lookup: Dict[str, int] = {}
+    for df, id_col in [
+        (attraction_df, "place_id"),
+        (event_df, "event_id"),
+        *([(accommodation_df, "place_id")] if accommodation_df is not None else []),
+    ]:
+        if "province_id" in df.columns:
+            for _, row in df.iterrows():
+                prov_lookup[str(row[id_col])] = int(row["province_id"])
+
     rows = []
     for uid, grp in interactions.groupby("user_id"):
         cat_hist = np.zeros(NUM_ITEM_CATEGORIES, dtype=np.float32)
         subcat_aff = np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)
+        prov_aff = np.zeros(NUM_PROVINCES, dtype=np.float32)
 
         for _, irow in grp.iterrows():
             w = float(_SIGNAL_WEIGHTS.get(str(irow["signal"]), 1.0))
@@ -525,11 +541,18 @@ def compute_behavior_features(
                     if 0 <= vocab_idx < NUM_ITEM_CATEGORIES:
                         cat_hist[vocab_idx] += w
 
+            # Province affinity: accumulate for all geolocated item types
+            prov_idx = prov_lookup.get(iid)
+            if prov_idx is not None and 0 <= prov_idx < NUM_PROVINCES:
+                prov_aff[prov_idx] += w
+
         # Normalize to interaction rates
         total_cat = cat_hist.sum()
         cat_hist_norm = (cat_hist / total_cat).astype(np.float32) if total_cat > 0 else cat_hist
         total_sub = subcat_aff.sum()
         subcat_aff_norm = (subcat_aff / total_sub).astype(np.float32) if total_sub > 0 else subcat_aff
+        total_prov = prov_aff.sum()
+        prov_aff_norm = (prov_aff / total_prov).astype(np.float32) if total_prov > 0 else prov_aff
 
         # Top-k category preference indices (categories with non-zero weight)
         pref_indices = [
@@ -541,6 +564,7 @@ def compute_behavior_features(
             "category_pref_indices": pref_indices,
             "category_interaction_history": cat_hist_norm,
             "subcat_affinity": subcat_aff_norm,
+            "province_affinity": prov_aff_norm,
         })
 
     return pd.DataFrame(rows).set_index("user_id")

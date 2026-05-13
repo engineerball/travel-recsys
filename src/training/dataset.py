@@ -17,6 +17,7 @@ from src.data.schema import (
     ItemType,
     NUM_ATTRACTION_SUBCATS,
     NUM_ITEM_CATEGORIES,
+    NUM_PROVINCES,
 )
 
 # ---------------------------------------------------------------------------
@@ -195,6 +196,7 @@ class StratifiedInteractionDataset:
                 udf["category_interaction_history"], NUM_ITEM_CATEGORIES
             ),
             "subcat_affinity": _to_float32_stack(udf["subcat_affinity"], NUM_ATTRACTION_SUBCATS),
+            "province_affinity": _to_float32_stack(udf["province_affinity"], NUM_PROVINCES),
         }
 
         # ------ Item features (union of all type schemas) ------
