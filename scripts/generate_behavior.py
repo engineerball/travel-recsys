@@ -142,8 +142,10 @@ def main() -> None:
     user_profile_features = user_profile_features.set_index("user_id")
 
     # Join behavior features; users with no interactions get zero-fill
-    zero_cat = np.zeros(69, dtype=np.float32)
-    zero_sub = np.zeros(58, dtype=np.float32)
+    from src.data.schema import NUM_ATTRACTION_SUBCATS, NUM_ITEM_CATEGORIES, NUM_PROVINCES
+    zero_cat = np.zeros(NUM_ITEM_CATEGORIES, dtype=np.float32)
+    zero_sub = np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)
+    zero_prov = np.zeros(NUM_PROVINCES, dtype=np.float32)
 
     user_profile_features["category_pref_indices"] = [
         behavior_features.loc[uid, "category_pref_indices"]
@@ -158,6 +160,11 @@ def main() -> None:
     user_profile_features["subcat_affinity"] = [
         behavior_features.loc[uid, "subcat_affinity"]
         if uid in behavior_features.index else zero_sub.copy()
+        for uid in user_profile_features.index
+    ]
+    user_profile_features["province_affinity"] = [
+        behavior_features.loc[uid, "province_affinity"]
+        if uid in behavior_features.index else zero_prov.copy()
         for uid in user_profile_features.index
     ]
 
