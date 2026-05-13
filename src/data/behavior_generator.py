@@ -39,6 +39,18 @@ _PERSONA_TYPE_WEIGHTS: Dict[str, Dict[int, float]] = {
     "luxury":         {0: 0.25, 1: 0.45, 2: 0.20, 3: 0.10},
 }
 
+# Article type preferences per persona.
+# Keys are typeId values (1-12) matching the raw `type.id` field.
+# Missing typeId → weight 1.0 (neutral). typeId=12 (News & Update) is
+# downweighted across all personas — it has no preference signal.
+_PERSONA_ARTICLE_TYPE_PREFS: Dict[str, Dict[int, float]] = {
+    "backpacker":     {3: 4.0, 8: 4.0, 10: 3.0, 9: 2.5, 1: 2.0, 4: 1.5, 12: 0.2},
+    "family":         {4: 4.0, 3: 3.0, 8: 3.0, 2: 2.5, 1: 2.0, 10: 2.0, 12: 0.2},
+    "culture_seeker": {1: 4.0, 2: 4.0, 3: 3.0, 4: 3.0, 9: 2.5, 8: 2.0, 12: 0.1},
+    "foodie":         {6: 5.0, 8: 3.0, 9: 2.5, 3: 2.0, 10: 1.5, 12: 0.2},
+    "luxury":         {5: 4.0, 6: 4.0, 8: 3.0, 9: 3.0, 1: 2.0, 12: 0.1},
+}
+
 # signal_probs: conditional like/bookmark probability per interaction
 _PERSONA_SIGNAL_PROBS: Dict[str, Dict[str, float]] = {
     "backpacker":     {"like": 0.10, "bookmark": 0.04},
@@ -416,7 +428,23 @@ class InteractionGenerator:
                     if t_mask.sum() >= 1:
                         mask &= t_mask
 
-                item_idx = int(pool.pop_model.sample(1, mask=mask, rng=self._rng)[0])
+                if itype == ItemType.ARTICLE and "article_type_id" in pool.df.columns:
+                    # Weight by persona article-type preference.
+                    # article_type_id is idx (0-based); original typeId = idx + 1.
+                    type_prefs = _PERSONA_ARTICLE_TYPE_PREFS.get(persona.name, {})
+                    type_ids = pool.df["article_type_id"].values + 1  # → original typeId
+                    pref_weights = np.array(
+                        [type_prefs.get(int(tid), 1.0) for tid in type_ids], dtype=float
+                    )
+                    weights = pref_weights * mask.astype(float)
+                    w_sum = weights.sum()
+                    if w_sum > 0:
+                        weights /= w_sum
+                        item_idx = int(self._rng.choice(len(pool.df), p=weights))
+                    else:
+                        item_idx = int(pool.pop_model.sample(1, mask=mask, rng=self._rng)[0])
+                else:
+                    item_idx = int(pool.pop_model.sample(1, mask=mask, rng=self._rng)[0])
                 item_id = str(pool.df.iloc[item_idx][pool.id_col])
 
                 # Determine signal: bookmark → like → view (exclusive, probability-based)
