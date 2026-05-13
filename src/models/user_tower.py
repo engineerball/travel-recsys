@@ -9,6 +9,7 @@ from tensorflow.keras.layers import Dense, Dropout, Embedding, LayerNormalizatio
 from src.data.schema import (
     EMB_CONFIG,
     EmbeddingConfig,
+    NUM_ARTICLE_TYPES,
     NUM_HOME_COUNTRIES,
     NUM_ITEM_CATEGORIES,
     NUM_TRAVEL_STYLES,
@@ -48,8 +49,9 @@ class UserTower(keras.Model):
         self.category_pref_emb = Embedding(NUM_ITEM_CATEGORIES, config.attraction_subcat_emb_dim)
 
         # Dense projections for dense float behavior vectors
-        self.cat_hist_proj = Dense(32, activation="relu")    # (69,) → (32,)
-        self.subcat_aff_proj = Dense(32, activation="relu")  # (58,) → (32,)
+        self.cat_hist_proj = Dense(32, activation="relu")      # (69,) → (32,)
+        self.subcat_aff_proj = Dense(32, activation="relu")    # (58,) → (32,)
+        self.art_type_aff_proj = Dense(16, activation="relu")  # (12,) → (16,)
 
         # Tower MLP head
         self.layer_norm = LayerNormalization()
@@ -103,6 +105,9 @@ class UserTower(keras.Model):
         subcat_aff = self.subcat_aff_proj(
             tf.cast(inputs["subcat_affinity"], tf.float32)
         )
+        art_type_aff = self.art_type_aff_proj(
+            tf.cast(inputs["article_type_affinity"], tf.float32)
+        )
         # Cyclical context features
         day_sin = tf.expand_dims(tf.cast(inputs["context_day_sin"], tf.float32), -1)
         day_cos = tf.expand_dims(tf.cast(inputs["context_day_cos"], tf.float32), -1)
@@ -113,7 +118,7 @@ class UserTower(keras.Model):
         x = tf.concat(
             [
                 age, country, style, theme, cat_pref,
-                cat_hist, subcat_aff,
+                cat_hist, subcat_aff, art_type_aff,
                 day_sin, day_cos, hour_sin, hour_cos,
             ],
             axis=-1,

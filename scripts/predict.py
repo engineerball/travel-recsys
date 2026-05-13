@@ -35,6 +35,7 @@ from src.data.schema import (
     TRAVEL_STYLES,
     TRAVEL_THEMES,
     ItemType,
+    NUM_ARTICLE_TYPES,
     NUM_ATTRACTION_SUBCATS,
     NUM_ITEM_CATEGORIES,
 )
@@ -56,7 +57,7 @@ _ARTICLE_TYPE_NAMES: Dict[int, str] = {
     9: "Essential", 10: "Activity", 11: "Campaign", 12: "News & Update",
 }
 
-_SIGNAL_WEIGHT = {"view": 1.0, "like": 3.0, "bookmark": 4.0}
+_SIGNAL_WEIGHT = {"view": 1.0, "click": 3.0}
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +135,12 @@ def build_user_features(user_row: pd.Series, dow: float = 2.0, hod: float = 14.0
             np.asarray(
                 user_row.get("subcat_affinity",
                              np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)),
+                dtype=np.float32,
+            ).reshape(1, -1),
+        "article_type_affinity":
+            np.asarray(
+                user_row.get("article_type_affinity",
+                             np.zeros(NUM_ARTICLE_TYPES, dtype=np.float32)),
                 dtype=np.float32,
             ).reshape(1, -1),
         "context_day_sin": np.array([math.sin(2 * math.pi * dow / 7)], dtype=np.float32),

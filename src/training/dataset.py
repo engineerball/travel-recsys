@@ -15,6 +15,7 @@ import tensorflow as tf
 
 from src.data.schema import (
     ItemType,
+    NUM_ARTICLE_TYPES,
     NUM_ATTRACTION_SUBCATS,
     NUM_ITEM_CATEGORIES,
 )
@@ -31,7 +32,7 @@ MAX_CATEGORY_INDICES: int = 3  # event categories
 MAX_AMENITY_INDICES: int = 24  # accommodation amenities (full vocab fits)
 
 # Default signal → float weight mapping (matches config.yaml)
-DEFAULT_SIGNAL_WEIGHTS: Dict[str, float] = {"view": 1.0, "like": 3.0, "bookmark": 4.0}
+DEFAULT_SIGNAL_WEIGHTS: Dict[str, float] = {"view": 1.0, "click": 3.0}
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +196,7 @@ class StratifiedInteractionDataset:
                 udf["category_interaction_history"], NUM_ITEM_CATEGORIES
             ),
             "subcat_affinity": _to_float32_stack(udf["subcat_affinity"], NUM_ATTRACTION_SUBCATS),
+            "article_type_affinity": _to_float32_stack(udf["article_type_affinity"], NUM_ARTICLE_TYPES),
         }
 
         # ------ Item features (union of all type schemas) ------

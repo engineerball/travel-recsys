@@ -27,7 +27,7 @@ def infonce_loss(
         item_emb: float32 [B, D].
         temperature: softmax temperature; lower = sharper.
         signal_weights: optional float32 [B] per-sample importance weights
-            (e.g. view=1, like=3, bookmark=4). Normalised to preserve loss scale.
+            (e.g. view=1, click=3). Normalised to preserve loss scale.
 
     Returns:
         Scalar loss tensor.

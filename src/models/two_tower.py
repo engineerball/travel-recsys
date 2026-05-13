@@ -99,7 +99,7 @@ class TwoTowerModel(keras.Model):
             user_emb: float32 [B, D] L2-normalized user embeddings.
             item_emb: float32 [B, D] L2-normalized item embeddings.
             signal_weights: optional float32 [B] per-sample importance weights
-                (e.g. 1.0=view, 3.0=like, 4.0=bookmark). Uniform if None.
+                (e.g. 1.0=view, 3.0=click). Uniform if None.
 
         Returns:
             Scalar loss tensor.

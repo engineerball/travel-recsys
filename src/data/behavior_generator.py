@@ -16,6 +16,7 @@ import pandas as pd
 
 from src.data.schema import (
     ItemType,
+    NUM_ARTICLE_TYPES,
     NUM_ATTRACTION_SUBCATS,
     NUM_ITEM_CATEGORIES,
     NUM_PROVINCES,
@@ -26,7 +27,7 @@ from src.data.schema import (
 # Constants
 # ---------------------------------------------------------------------------
 
-_SIGNAL_WEIGHTS: Dict[str, float] = {"view": 1.0, "like": 3.0, "bookmark": 4.0}
+_SIGNAL_WEIGHTS: Dict[str, float] = {"view": 1.0, "click": 3.0}
 _SESSION_START = pd.Timestamp("2024-01-01")
 _SESSION_END = pd.Timestamp("2025-06-30")
 _EARTH_RADIUS_KM = 6371.0
@@ -52,13 +53,13 @@ _PERSONA_ARTICLE_TYPE_PREFS: Dict[str, Dict[int, float]] = {
     "luxury":         {5: 4.0, 6: 4.0, 8: 3.0, 9: 3.0, 1: 2.0, 12: 0.1},
 }
 
-# signal_probs: conditional like/bookmark probability per interaction
+# signal_probs: conditional click probability per interaction
 _PERSONA_SIGNAL_PROBS: Dict[str, Dict[str, float]] = {
-    "backpacker":     {"like": 0.10, "bookmark": 0.04},
-    "family":         {"like": 0.20, "bookmark": 0.08},
-    "culture_seeker": {"like": 0.25, "bookmark": 0.12},
-    "foodie":         {"like": 0.30, "bookmark": 0.10},
-    "luxury":         {"like": 0.22, "bookmark": 0.15},
+    "backpacker":     {"click": 0.14},
+    "family":         {"click": 0.28},
+    "culture_seeker": {"click": 0.37},
+    "foodie":         {"click": 0.40},
+    "luxury":         {"click": 0.37},
 }
 
 
@@ -94,7 +95,7 @@ def load_personas_from_config(config: dict) -> List[PersonaConfig]:
                 name, {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
             ),
             signal_probs=_PERSONA_SIGNAL_PROBS.get(
-                name, {"like": 0.15, "bookmark": 0.05}
+                name, {"click": 0.20}
             ),
         ))
     return personas
@@ -448,11 +449,10 @@ class InteractionGenerator:
                     item_idx = int(pool.pop_model.sample(1, mask=mask, rng=self._rng)[0])
                 item_id = str(pool.df.iloc[item_idx][pool.id_col])
 
-                # Determine signal: bookmark → like → view (exclusive, probability-based)
+                # Determine signal: click or view (exclusive, probability-based)
                 r = float(self._rng.random())
-                bp = persona.signal_probs.get("bookmark", 0.05)
-                lp = persona.signal_probs.get("like", 0.15)
-                signal = "bookmark" if r < bp else ("like" if r < bp + lp else "view")
+                cp = persona.signal_probs.get("click", 0.15)
+                signal = "click" if r < cp else "view"
 
                 records.append({
                     "user_id": uid,
@@ -475,6 +475,7 @@ def compute_behavior_features(
     attraction_df: pd.DataFrame,
     event_df: pd.DataFrame,
     accommodation_df: Optional[pd.DataFrame] = None,
+    article_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Compute per-user behavior features from interaction history.
 
@@ -486,6 +487,7 @@ def compute_behavior_features(
         attraction_df: preprocessed attractions with place_id + sub_category_indices + province_id
         event_df: preprocessed events with event_id + category_indices + province_id
         accommodation_df: preprocessed accommodations with place_id + province_id (optional)
+        article_df: preprocessed articles with article_id + article_type_id (optional)
 
     Returns:
         DataFrame indexed by user_id with columns:
@@ -493,6 +495,7 @@ def compute_behavior_features(
             category_interaction_history  — float32 array (NUM_ITEM_CATEGORIES,)
             subcat_affinity               — float32 array (NUM_ATTRACTION_SUBCATS,)
             province_affinity             — float32 array (NUM_PROVINCES,)
+            article_type_affinity         — float32 array (NUM_ARTICLE_TYPES,)
     """
     attr_lookup: Dict[str, List[int]] = {
         str(row["place_id"]): row["sub_category_indices"]
@@ -502,6 +505,12 @@ def compute_behavior_features(
         str(row["event_id"]): row["category_indices"]
         for _, row in event_df.iterrows()
     }
+
+    # article_type_id lookup: article_id → sequential article type index
+    art_type_lookup: Dict[str, int] = {}
+    if article_df is not None and "article_type_id" in article_df.columns:
+        for _, row in article_df.iterrows():
+            art_type_lookup[str(row["article_id"])] = int(row["article_type_id"])
 
     # province_id lookup: item_id → sequential province index (already mapped by preprocessing)
     prov_lookup: Dict[str, int] = {}
@@ -519,6 +528,7 @@ def compute_behavior_features(
         cat_hist = np.zeros(NUM_ITEM_CATEGORIES, dtype=np.float32)
         subcat_aff = np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)
         prov_aff = np.zeros(NUM_PROVINCES, dtype=np.float32)
+        art_type_aff = np.zeros(NUM_ARTICLE_TYPES, dtype=np.float32)
 
         for _, irow in grp.iterrows():
             w = float(_SIGNAL_WEIGHTS.get(str(irow["signal"]), 1.0))
@@ -546,6 +556,12 @@ def compute_behavior_features(
             if prov_idx is not None and 0 <= prov_idx < NUM_PROVINCES:
                 prov_aff[prov_idx] += w
 
+            # Article type affinity
+            if itype == int(ItemType.ARTICLE):
+                art_type_idx = art_type_lookup.get(iid)
+                if art_type_idx is not None and 0 <= art_type_idx < NUM_ARTICLE_TYPES:
+                    art_type_aff[art_type_idx] += w
+
         # Normalize to interaction rates
         total_cat = cat_hist.sum()
         cat_hist_norm = (cat_hist / total_cat).astype(np.float32) if total_cat > 0 else cat_hist
@@ -553,6 +569,8 @@ def compute_behavior_features(
         subcat_aff_norm = (subcat_aff / total_sub).astype(np.float32) if total_sub > 0 else subcat_aff
         total_prov = prov_aff.sum()
         prov_aff_norm = (prov_aff / total_prov).astype(np.float32) if total_prov > 0 else prov_aff
+        total_art = art_type_aff.sum()
+        art_type_aff_norm = (art_type_aff / total_art).astype(np.float32) if total_art > 0 else art_type_aff
 
         # Top-k category preference indices (categories with non-zero weight)
         pref_indices = [
@@ -570,6 +588,7 @@ def compute_behavior_features(
             "subcat_affinity": subcat_aff_norm,
             "province_affinity": prov_aff_norm,
             "province_pref_indices": prov_pref_indices,
+            "article_type_affinity": art_type_aff_norm,
         })
 
     return pd.DataFrame(rows).set_index("user_id")

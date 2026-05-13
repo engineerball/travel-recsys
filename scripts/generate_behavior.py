@@ -117,22 +117,25 @@ def main() -> None:
 
     # --- Compute behavior features ---
     print("\nComputing user behavior features …")
-    from src.data.preprocessing import preprocess_attractions, preprocess_accommodations, preprocess_events
+    from src.data.preprocessing import preprocess_articles, preprocess_attractions, preprocess_accommodations, preprocess_events
     import glob as _glob
 
     attr_files = sorted(_glob.glob(os.path.join(args.raw_dir, "destinations", "*.parquet")))
     evt_files = sorted(_glob.glob(os.path.join(args.raw_dir, "activities", "*.parquet")))
     accom_files = sorted(_glob.glob(os.path.join(args.raw_dir, "accommodations", "*.parquet")))
+    art_files = sorted(_glob.glob(os.path.join(args.raw_dir, "articles", "*.parquet")))
     attr_raw = pd.concat([pd.read_parquet(f) for f in attr_files], ignore_index=True)
     evt_raw = pd.concat([pd.read_parquet(f) for f in evt_files], ignore_index=True)
     accom_raw = pd.concat([pd.read_parquet(f) for f in accom_files], ignore_index=True) if accom_files else None
+    art_raw = pd.concat([pd.read_parquet(f) for f in art_files], ignore_index=True) if art_files else None
 
     attraction_prepped = preprocess_attractions(attr_raw)
     event_prepped = preprocess_events(evt_raw)
     accom_prepped = preprocess_accommodations(accom_raw) if accom_raw is not None else None
+    article_prepped = preprocess_articles(art_raw) if art_raw is not None else None
 
     behavior_features = compute_behavior_features(
-        interactions, attraction_prepped, event_prepped, accom_prepped
+        interactions, attraction_prepped, event_prepped, accom_prepped, article_prepped
     )
     print(f"  Behavior features for {len(behavior_features)} users")
 
@@ -142,10 +145,11 @@ def main() -> None:
     user_profile_features = user_profile_features.set_index("user_id")
 
     # Join behavior features; users with no interactions get zero-fill
-    from src.data.schema import NUM_ATTRACTION_SUBCATS, NUM_ITEM_CATEGORIES, NUM_PROVINCES
+    from src.data.schema import NUM_ARTICLE_TYPES, NUM_ATTRACTION_SUBCATS, NUM_ITEM_CATEGORIES, NUM_PROVINCES
     zero_cat = np.zeros(NUM_ITEM_CATEGORIES, dtype=np.float32)
     zero_sub = np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)
     zero_prov = np.zeros(NUM_PROVINCES, dtype=np.float32)
+    zero_art = np.zeros(NUM_ARTICLE_TYPES, dtype=np.float32)
 
     user_profile_features["category_pref_indices"] = [
         behavior_features.loc[uid, "category_pref_indices"]
@@ -170,6 +174,11 @@ def main() -> None:
     user_profile_features["province_pref_indices"] = [
         behavior_features.loc[uid, "province_pref_indices"]
         if uid in behavior_features.index else []
+        for uid in user_profile_features.index
+    ]
+    user_profile_features["article_type_affinity"] = [
+        behavior_features.loc[uid, "article_type_affinity"]
+        if uid in behavior_features.index else zero_art.copy()
         for uid in user_profile_features.index
     ]
 

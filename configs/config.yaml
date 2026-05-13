@@ -52,8 +52,7 @@ training:
     hard_negative: 0.1
   signal_weights:
     view: 1.0
-    like: 3.0
-    bookmark: 4.0
+    click: 3.0
 
 # --- Behavior generation ---
 behavior:

@@ -41,6 +41,7 @@ from src.data.preprocessing import (
 )
 from src.data.schema import (
     ItemType,
+    NUM_ARTICLE_TYPES,
     NUM_ATTRACTION_SUBCATS,
     NUM_ITEM_CATEGORIES,
 )
@@ -165,6 +166,12 @@ def _build_user_features(
             np.asarray(
                 user_row.get("subcat_affinity",
                              np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)),
+                dtype=np.float32,
+            ).reshape(1, -1),
+        "article_type_affinity":
+            np.asarray(
+                user_row.get("article_type_affinity",
+                             np.zeros(NUM_ARTICLE_TYPES, dtype=np.float32)),
                 dtype=np.float32,
             ).reshape(1, -1),
         "context_day_sin":
