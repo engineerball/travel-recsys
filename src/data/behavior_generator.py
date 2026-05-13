@@ -53,6 +53,35 @@ _PERSONA_ARTICLE_TYPE_PREFS: Dict[str, Dict[int, float]] = {
     "luxury":         {5: 4.0, 6: 4.0, 8: 3.0, 9: 3.0, 1: 2.0, 12: 0.1},
 }
 
+# travel_theme → additive persona bias (unnormalized)
+# Themes from schema.py TRAVEL_THEMES; missing theme → no bias
+_THEME_PERSONA_BIAS: Dict[str, Dict[str, float]] = {
+    "สายคาเฟ่/ถ่ายรูป":           {"foodie": 1.0, "luxury": 1.0},
+    "สายชิลล์/ไนต์ไลฟ์":          {"luxury": 2.0},
+    "สายแอดเวนเจอร์/กิจกรรม":     {"backpacker": 3.0},
+    "สายอาร์ต/แกลเลอรี่":          {"culture_seeker": 2.0},
+    "สายสุขภาพ/สปา/น้ำพุร้อน":    {"luxury": 2.0},
+    "สายชีวิตในเมือง/ช้อปปิ้ง":   {"luxury": 1.0, "foodie": 1.0},
+    "สายทะเล":                     {"backpacker": 2.0},
+    "สายฟาร์ม/เกษตร/โฮมสเตย์":   {"backpacker": 1.0, "culture_seeker": 1.0},
+    "สายแคมป์ปิ้ง":                {"backpacker": 2.0},
+    "สายบุญ/ประวัติศาสตร์":        {"culture_seeker": 3.0},
+    "สายกิน/ตะลุยชิม":             {"foodie": 3.0},
+    "สายเทศกาล/อีเวนต์":           {"culture_seeker": 1.0, "backpacker": 1.0},
+    "สายครอบครัว/สวนสนุก":         {"family": 3.0},
+    "สายป่าเขา/น้ำตก":             {"backpacker": 2.0},
+    "สายชุมชน/วัฒนธรรม":           {"culture_seeker": 2.0},
+}
+
+# travel_style → additive persona bias
+_STYLE_PERSONA_BIAS: Dict[str, Dict[str, float]] = {
+    "คู่":       {"luxury": 1.0},
+    "ครอบครัว":  {"family": 3.0},
+    "คนเดียว":   {"backpacker": 1.0, "culture_seeker": 1.0},
+    "เพื่อน":    {"backpacker": 1.0, "foodie": 1.0},
+    "ผู้สูงอายุ": {"culture_seeker": 1.0, "family": 1.0},
+}
+
 # signal_probs: conditional click probability per interaction
 _PERSONA_SIGNAL_PROBS: Dict[str, Dict[str, float]] = {
     "backpacker":     {"click": 0.14},
@@ -370,6 +399,41 @@ class InteractionGenerator:
                         pmap[str(name)] = int(pid)
         return pmap
 
+    def _user_persona_weights(self, user_row: pd.Series) -> np.ndarray:
+        """Compute per-user persona sampling weights from travel_style and travel_theme.
+
+        Starts from global persona weights, adds theme/style bias, normalizes.
+        Users with no matching themes fall back to global weights.
+        """
+        import ast
+
+        weights = self._pw.copy()  # shape: (n_personas,)
+        persona_names = [p.name for p in self._personas]
+
+        def _parse_list(val) -> List[str]:
+            if isinstance(val, list):
+                return val
+            if isinstance(val, str):
+                try:
+                    result = ast.literal_eval(val)
+                    return result if isinstance(result, list) else [val]
+                except (ValueError, SyntaxError):
+                    return [val]
+            return []
+
+        for theme in _parse_list(user_row.get("travel_theme", [])):
+            for p_name, bias in _THEME_PERSONA_BIAS.get(str(theme), {}).items():
+                if p_name in persona_names:
+                    weights[persona_names.index(p_name)] += bias
+
+        for style in _parse_list(user_row.get("travel_style", [])):
+            for p_name, bias in _STYLE_PERSONA_BIAS.get(str(style), {}).items():
+                if p_name in persona_names:
+                    weights[persona_names.index(p_name)] += bias
+
+        total = weights.sum()
+        return weights / total if total > 0 else self._pw
+
     def _user_province_id(self, user_row: pd.Series) -> int:
         name = str(user_row.get("home_province", ""))
         return self._prov_name_to_id.get(name, 101)  # default: Bangkok (province_id 101)
@@ -393,7 +457,8 @@ class InteractionGenerator:
 
         for _, user_row in users.iterrows():
             uid = user_row["user_id"]
-            p_idx = int(self._rng.choice(len(self._personas), p=self._pw))
+            user_pw = self._user_persona_weights(user_row)
+            p_idx = int(self._rng.choice(len(self._personas), p=user_pw))
             persona = self._personas[p_idx]
             n_sess = int(self._rng.integers(self._ipp_min, self._ipp_max + 1))
             prov_id = self._user_province_id(user_row)
