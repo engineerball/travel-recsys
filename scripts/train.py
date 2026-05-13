@@ -149,6 +149,7 @@ def _item_features_for_index(
         base.update({
             "sub_category_indices": _pad_column(df["sub_category_indices"], MAX_SUBCAT_INDICES),
             "province_id": df["province_id"].values.astype(np.int32),
+            "region_id": df["region_id"].values.astype(np.int32),
             "days_open_vector": np.stack(df["days_open_vector"].values).astype(np.float32),
             "is_free": df["is_free"].values.astype(np.float32),
             "log_view_count": df["log_view_count"].values.astype(np.float32),
@@ -157,6 +158,7 @@ def _item_features_for_index(
         base.update({
             "amenity_indices": _pad_column(df["amenity_indices"], MAX_AMENITY_INDICES),
             "province_id": df["province_id"].values.astype(np.int32),
+            "region_id": df["region_id"].values.astype(np.int32),
             "price_tier_id": df["price_tier_id"].values.astype(np.int32),
             "is_price_missing": df["is_price_missing"].values.astype(np.float32),
             "star_rating_norm": df["star_rating_norm"].values.astype(np.float32),
@@ -166,6 +168,7 @@ def _item_features_for_index(
         base.update({
             "category_indices": _pad_column(df["category_indices"], MAX_CATEGORY_INDICES),
             "province_id": df["province_id"].values.astype(np.int32),
+            "region_id": df["region_id"].values.astype(np.int32),
             "duration_days_norm": df["duration_days_norm"].values.astype(np.float32),
             "month_sin": df["month_sin"].values.astype(np.float32),
             "month_cos": df["month_cos"].values.astype(np.float32),
