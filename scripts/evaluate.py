@@ -50,7 +50,6 @@ from src.training.dataset import (
     MAX_AMENITY_INDICES,
     MAX_CAT_PREF,
     MAX_CATEGORY_INDICES,
-    MAX_PROVINCE_PREF,
     MAX_SUBCAT_INDICES,
     MAX_TRAVEL_STYLES,
     MAX_TRAVEL_THEMES,
@@ -168,8 +167,6 @@ def _build_user_features(
                              np.zeros(NUM_ATTRACTION_SUBCATS, dtype=np.float32)),
                 dtype=np.float32,
             ).reshape(1, -1),
-        "province_pref_indices":
-            _pad(user_row.get("province_pref_indices", []), MAX_PROVINCE_PREF),
         "context_day_sin":
             np.array([math.sin(2 * math.pi * dow / 7)], dtype=np.float32),
         "context_day_cos":
