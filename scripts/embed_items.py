@@ -1,29 +1,36 @@
 """Pre-compute text embeddings for all item types.
 
-Two backends (select via --backend):
+Three backends (select via --backend):
 
-  api  (default) — Google AI text-embedding-004 via REST API.
-                   Fast: ~100 texts/call, no local GPU needed.
-                   Requires: GOOGLE_API_KEY env var.
-                   Supports MRL via output_dimensionality=256.
+  api    (default) — Google AI text-embedding-004 via REST API.
+                     Fast: ~100 texts/call, no local GPU needed.
+                     Requires: GOOGLE_API_KEY env var.
 
-  local          — sentence-transformers with any HuggingFace model.
-                   Requires: HF_TOKEN env var + local GPU recommended.
-                   Default model: google/embeddinggemma-300m.
+  vertex           — Vertex AI text-embedding-004 via SDK.
+                     Auth via Application Default Credentials (ADC).
+                     Best for Vertex AI Workbench — service account Just Works.
+                     Requires: --gcp-project  (and optionally --gcp-location).
+                     250 texts/call (higher than api backend).
+
+  local            — sentence-transformers with any HuggingFace model.
+                     Requires: HF_TOKEN env var + local GPU recommended.
+                     Default model: google/embeddinggemma-300m.
+
+All backends output float32 [N, 256] L2-normalized embeddings.
 
 Outputs (written to --processed-dir, default data/processed/):
     {type}_text_embeds.npy   float32 [N, 256]
     {type}_item_ids.npy      object  [N]
 
 Usage:
-    # Fast (Google API) — recommended for local machine
+    # Vertex AI Workbench (service account auth, no env vars needed)
+    uv run python scripts/embed_items.py --backend vertex --gcp-project my-project
+
+    # Local machine (Google API key)
     GOOGLE_API_KEY=... uv run python scripts/embed_items.py
 
     # Local model (GPU recommended)
     HF_TOKEN=hf_... uv run python scripts/embed_items.py --backend local
-
-    # Specific types only
-    GOOGLE_API_KEY=... uv run python scripts/embed_items.py --types attraction event
 """
 
 from __future__ import annotations
@@ -135,6 +142,61 @@ def embed_texts_api(
 
 
 # ---------------------------------------------------------------------------
+# Backend: Vertex AI SDK (service account / ADC)
+# ---------------------------------------------------------------------------
+
+def embed_texts_vertex(
+    texts: List[str],
+    project: str,
+    location: str = "us-central1",
+    model_name: str = "text-embedding-004",
+    truncate_dim: int = 256,
+    batch_size: int = 250,      # Vertex AI limit per call
+) -> np.ndarray:
+    """Embed texts via Vertex AI SDK using Application Default Credentials.
+
+    On Vertex AI Workbench the instance service account is used automatically.
+    Locally, run `gcloud auth application-default login` first.
+    """
+    try:
+        import vertexai
+        from vertexai.language_models import TextEmbeddingInput, TextEmbeddingModel
+    except ImportError:
+        raise ImportError("Run: uv add google-cloud-aiplatform")
+
+    print(f"  Vertex AI project={project} location={location} model={model_name}")
+    vertexai.init(project=project, location=location)
+    model = TextEmbeddingModel.from_pretrained(model_name)
+
+    n = len(texts)
+    all_embeddings: List[np.ndarray] = []
+
+    print(f"  {n} texts → {(n + batch_size - 1) // batch_size} Vertex AI calls …")
+    t0 = time.time()
+
+    for start in range(0, n, batch_size):
+        batch = texts[start : start + batch_size]
+        inputs = [
+            TextEmbeddingInput(text=t, task_type="RETRIEVAL_DOCUMENT")
+            for t in batch
+        ]
+        kwargs = {"output_dimensionality": truncate_dim}
+        results = model.get_embeddings(inputs, **kwargs)
+        batch_embs = np.array([r.values for r in results], dtype=np.float32)
+
+        # L2-normalize
+        norms = np.linalg.norm(batch_embs, axis=1, keepdims=True)
+        batch_embs = batch_embs / np.maximum(norms, 1e-8)
+
+        all_embeddings.append(batch_embs)
+        done = min(start + batch_size, n)
+        print(f"  [{done}/{n}]  {time.time() - t0:.1f}s", end="\r")
+
+    print()
+    return np.concatenate(all_embeddings, axis=0)
+
+
+# ---------------------------------------------------------------------------
 # Backend: local sentence-transformers
 # ---------------------------------------------------------------------------
 
@@ -185,14 +247,23 @@ def main() -> None:
     parser.add_argument("--raw-dir", default="data/raw")
     parser.add_argument("--processed-dir", default="data/processed")
     parser.add_argument(
-        "--backend", choices=["api", "local"], default="api",
-        help="api=Google AI REST (fast, no GPU); local=sentence-transformers (GPU recommended)",
+        "--backend", choices=["api", "vertex", "local"], default="api",
+        help="api=Google AI key; vertex=Vertex AI ADC (service account); local=HuggingFace",
     )
     # API backend options
     parser.add_argument("--api-model", default="models/text-embedding-004",
                         help="Google AI embedding model")
     parser.add_argument("--api-batch-size", type=int, default=100,
                         help="Texts per API call (max 100)")
+    # Vertex AI backend options
+    parser.add_argument("--gcp-project", default=None,
+                        help="GCP project ID (required for --backend vertex)")
+    parser.add_argument("--gcp-location", default="us-central1",
+                        help="Vertex AI region (default: us-central1)")
+    parser.add_argument("--vertex-model", default="text-embedding-004",
+                        help="Vertex AI embedding model name")
+    parser.add_argument("--vertex-batch-size", type=int, default=250,
+                        help="Texts per Vertex AI call (max 250)")
     # Local backend options
     parser.add_argument("--local-model", default="google/embeddinggemma-300m",
                         help="HuggingFace model ID for local backend")
@@ -243,6 +314,17 @@ def main() -> None:
                 model=args.api_model,
                 truncate_dim=args.truncate_dim,
                 batch_size=args.api_batch_size,
+            )
+        elif args.backend == "vertex":
+            if not args.gcp_project:
+                parser.error("--gcp-project is required for --backend vertex")
+            embeddings = embed_texts_vertex(
+                texts,
+                project=args.gcp_project,
+                location=args.gcp_location,
+                model_name=args.vertex_model,
+                truncate_dim=args.truncate_dim,
+                batch_size=args.vertex_batch_size,
             )
         else:
             embeddings = embed_texts_local(
