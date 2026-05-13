@@ -107,9 +107,10 @@ def _load_item_features(
         else:
             print(f"    WARNING: no text embeds found at {emb_path} — using zeros")
 
-    # Set item_id as index for StratifiedInteractionDataset lookup
+    # Set item_id as index; deduplicate in case multiple parquet files overlap
     df = df.set_index(_ID_COLS[item_type])
     df.index = df.index.astype(str)
+    df = df[~df.index.duplicated(keep="first")]
     return df
 
 

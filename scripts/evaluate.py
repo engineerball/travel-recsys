@@ -123,6 +123,7 @@ def _load_item_features(
 
     df = df.set_index(_ID_COLS[item_type])
     df.index = df.index.astype(str)
+    df = df[~df.index.duplicated(keep="first")]
     return df
 
 

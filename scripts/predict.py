@@ -334,6 +334,7 @@ def main() -> None:
                 ]
         df = df.set_index(_ID_COLS[itype])
         df.index = df.index.astype(str)
+        df = df[~df.index.duplicated(keep="first")]
         item_features[itype] = df
 
     # --- Load model ---
