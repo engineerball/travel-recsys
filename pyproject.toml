@@ -2,9 +2,9 @@
 name = "travel-recsys"
 version = "0.1.0"
 description = "Two-Tower + MMoE Recommendation System for Thai Tourism"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 dependencies = [
-    "tensorflow>=2.15",
+    "tensorflow>=2.16",
     "tensorflow-recommenders>=0.7",
     "numpy>=1.24",
     "pandas>=2.0",

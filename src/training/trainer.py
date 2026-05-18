@@ -19,6 +19,42 @@ from src.data.schema import ItemType
 from src.training.losses import infonce_loss, mixed_negative_loss
 
 
+class WarmupCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
+    """Linear warmup for ``warmup_steps``, then cosine decay to ``min_lr``."""
+
+    def __init__(self, max_lr: float, min_lr: float, warmup_steps: int, total_steps: int):
+        super().__init__()
+        self.max_lr = max_lr
+        self.min_lr = min_lr
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
+
+    def __call__(self, step):
+        step = tf.cast(step, tf.float32)
+        warmup = tf.cast(self.warmup_steps, tf.float32)
+        total = tf.cast(self.total_steps, tf.float32)
+
+        # Linear warmup phase
+        warmup_lr = self.max_lr * (step / tf.maximum(warmup, 1.0))
+
+        # Cosine decay phase
+        decay_steps = total - warmup
+        completed = tf.maximum(step - warmup, 0.0) / tf.maximum(decay_steps, 1.0)
+        cosine_lr = self.min_lr + 0.5 * (self.max_lr - self.min_lr) * (
+            1.0 + tf.cos(np.pi * tf.minimum(completed, 1.0))
+        )
+
+        return tf.where(step < warmup, warmup_lr, cosine_lr)
+
+    def get_config(self):
+        return {
+            "max_lr": self.max_lr,
+            "min_lr": self.min_lr,
+            "warmup_steps": self.warmup_steps,
+            "total_steps": self.total_steps,
+        }
+
+
 class TwoTowerTrainer:
     """Joint trainer for TwoTowerModel across all 4 item types.
 
@@ -48,14 +84,7 @@ class TwoTowerTrainer:
         self.model = model
         self.temperature: float = float(cfg.get("temperature", 0.07))
         self.checkpoint_dir = checkpoint_dir
-
-        lr = float(cfg.get("learning_rate", 1e-3))
-        clipnorm = cfg.get("clipnorm", None)
-
-        opt_kwargs = {"learning_rate": lr}
-        if clipnorm is not None:
-            opt_kwargs["clipnorm"] = float(clipnorm)
-        self.optimizer = tf.keras.optimizers.Adam(**opt_kwargs)
+        self._cfg = cfg  # saved so train() can build the LR schedule after knowing total steps
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -143,6 +172,33 @@ class TwoTowerTrainer:
     # Full training loop
     # ------------------------------------------------------------------
 
+    def _build_optimizer(self, epochs: int, steps_per_epoch: int) -> None:
+        """Instantiate Adam with WarmupCosineDecay schedule."""
+        cfg = self._cfg
+        max_lr = float(cfg.get("learning_rate", 1e-3))
+        min_lr = max_lr * float(cfg.get("min_lr_ratio", 0.01))
+        warmup_epochs = int(cfg.get("warmup_epochs", 0))
+        clipnorm = cfg.get("clipnorm", None)
+
+        total_steps = epochs * steps_per_epoch
+        warmup_steps = warmup_epochs * steps_per_epoch
+
+        if warmup_steps > 0 or cfg.get("min_lr_ratio"):
+            schedule = WarmupCosineDecay(
+                max_lr=max_lr,
+                min_lr=min_lr,
+                warmup_steps=warmup_steps,
+                total_steps=total_steps,
+            )
+            lr_arg = schedule
+        else:
+            lr_arg = max_lr
+
+        opt_kwargs: Dict = {"learning_rate": lr_arg}
+        if clipnorm is not None:
+            opt_kwargs["clipnorm"] = float(clipnorm)
+        self.optimizer = tf.keras.optimizers.Adam(**opt_kwargs)
+
     def train(
         self,
         train_dataset: tf.data.Dataset,
@@ -169,6 +225,7 @@ class TwoTowerTrainer:
         Returns:
             History dict: ``{"train_loss": [...], "val_loss": [...]}``.
         """
+        self._build_optimizer(epochs, steps_per_epoch)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
 

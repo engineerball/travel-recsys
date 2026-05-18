@@ -195,7 +195,7 @@ def main() -> None:
     parser.add_argument("--checkpoint-dir", default="checkpoints")
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
-    parser.add_argument("--steps-per-epoch", type=int, default=50)
+    parser.add_argument("--steps-per-epoch", type=int, default=None)
     parser.add_argument("--patience", type=int, default=None,
                         help="Early stopping patience epochs (default from config)")
     parser.add_argument("--skip-index", action="store_true",
@@ -263,6 +263,8 @@ def main() -> None:
     trainer_config = {
         "learning_rate": lr,
         "temperature": temperature,
+        "warmup_epochs": int(train_cfg.get("warmup_epochs", 0)),
+        "min_lr_ratio": float(train_cfg.get("min_lr_ratio", 1.0)),
     }
 
     trainer = TwoTowerTrainer(

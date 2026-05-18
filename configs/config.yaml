@@ -37,19 +37,21 @@ model:
   user_tower_hidden: [256, 128]
   item_tower_hidden: [256, 128]
   dropout_rate: 0.3
-  temperature: 0.07              # InfoNCE temperature
+  temperature: 0.12              # InfoNCE temperature (raised from 0.07 — softer targets)
 
 # --- Training ---
 training:
   batch_size: 512
-  epochs: 40
-  steps_per_epoch: 50
-  patience: 10
+  epochs: 60
+  steps_per_epoch: 150
+  patience: 15
   learning_rate: 0.001
+  warmup_epochs: 3               # linear warmup before cosine decay
+  min_lr_ratio: 0.01             # end LR = learning_rate * min_lr_ratio
   negative_mix:
-    in_batch_same_type: 0.6
-    random_cross_type: 0.3
-    hard_negative: 0.1
+    in_batch_same_type: 0.50
+    random_cross_type: 0.25
+    hard_negative: 0.25
   signal_weights:
     view: 1.0
     click: 3.0
