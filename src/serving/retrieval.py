@@ -149,6 +149,11 @@ class FAISSRetriever:
         """Number of vectors in the index."""
         return self._index.ntotal if self._index else 0
 
+    @property
+    def item_ids(self) -> Optional[np.ndarray]:
+        """Item IDs in index order."""
+        return self._item_ids
+
 
 # ---------------------------------------------------------------------------
 # MultiTypeIndex
@@ -279,6 +284,13 @@ class MultiTypeIndex:
     def index_sizes(self) -> Dict[ItemType, int]:
         """Number of vectors indexed per item type."""
         return {t: r.ntotal for t, r in self._retrievers.items()}
+
+    def indexed_ids(self, item_type: ItemType) -> set:
+        """Return the set of item ID strings present in the given type's index."""
+        retriever = self._retrievers.get(item_type)
+        if retriever is None or retriever.item_ids is None:
+            return set()
+        return set(retriever.item_ids.astype(str))
 
 
 # ---------------------------------------------------------------------------

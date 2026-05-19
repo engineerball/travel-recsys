@@ -178,6 +178,8 @@ def _item_features_for_index(
             "article_type_id": df["article_type_id"].values.astype(np.int32),
             "pub_month_sin": df["pub_month_sin"].values.astype(np.float32),
             "pub_month_cos": df["pub_month_cos"].values.astype(np.float32),
+            "is_thai": df["is_thai"].values.astype(np.float32),
+            "pub_recency_norm": df["pub_recency_norm"].values.astype(np.float32),
         })
 
     return base, item_ids
@@ -200,6 +202,8 @@ def main() -> None:
                         help="Early stopping patience epochs (default from config)")
     parser.add_argument("--skip-index", action="store_true",
                         help="Skip FAISS index building after training")
+    parser.add_argument("--min-item-interactions", type=int, default=None,
+                        help="Drop catalog items with fewer interactions than this (default from config)")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -215,6 +219,7 @@ def main() -> None:
     lr = float(train_cfg.get("learning_rate", 1e-3))
     temperature = float(model_cfg.get("temperature", 0.07))
     dropout_rate = float(model_cfg.get("dropout_rate", 0.1))
+    min_item_interactions = args.min_item_interactions or int(train_cfg.get("min_item_interactions", 1))
 
     # --- Load interactions + user features ---
     print("Loading generated data …")
@@ -233,6 +238,22 @@ def main() -> None:
     print(f"  Interactions: {len(interactions)}")
     print(f"  Users:        {len(user_features_df)}")
 
+    # --- Prune sparse catalog items ---
+    if min_item_interactions > 1:
+        print(f"\nPruning items with < {min_item_interactions} interactions …")
+        counts = interactions.groupby(["item_type", "item_id"]).size()
+        keep_mask = counts >= min_item_interactions
+        before = len(interactions)
+        keep_df = counts[keep_mask].reset_index()[["item_type", "item_id"]]
+        interactions = interactions.merge(keep_df, on=["item_type", "item_id"], how="inner").reset_index(drop=True)
+        after = len(interactions)
+        print(f"  Interactions: {before} → {after} ({before - after} dropped)")
+        for itype_val in interactions["item_type"].unique():
+            n_kept = counts[keep_mask].xs(itype_val, level="item_type").shape[0] if itype_val in counts[keep_mask].index.get_level_values("item_type") else 0
+            n_total = counts.xs(itype_val, level="item_type").shape[0] if itype_val in counts.index.get_level_values("item_type") else 0
+            iname = ItemType(itype_val).name
+            print(f"  {iname}: {n_kept}/{n_total} items kept")
+
     # --- Load item features ---
     print("\nLoading item features …")
     item_features: Dict[ItemType, pd.DataFrame] = {}
@@ -240,10 +261,22 @@ def main() -> None:
     if processed_dir is None:
         print("  (no processed dir — text embeddings will be zeros)")
 
+    # Build per-type set of item_ids that survived the interaction filter
+    seen_item_ids: Dict[ItemType, set] = {itype: set() for itype in ItemType}
+    if min_item_interactions > 1:
+        for itype_val, grp in interactions[["item_type", "item_id"]].drop_duplicates().groupby("item_type"):
+            seen_item_ids[ItemType(itype_val)] = set(grp["item_id"].astype(str))
+
     for itype in ItemType:
         print(f"  {itype.name} …")
-        item_features[itype] = _load_item_features(itype, args.raw_dir, processed_dir)
-        print(f"    {len(item_features[itype])} items")
+        df = _load_item_features(itype, args.raw_dir, processed_dir)
+        if min_item_interactions > 1 and seen_item_ids[itype]:
+            before_n = len(df)
+            df = df[df.index.isin(seen_item_ids[itype])]
+            print(f"    {len(df)}/{before_n} items (catalog pruned)")
+        else:
+            print(f"    {len(df)} items")
+        item_features[itype] = df
 
     # --- Build tf.data datasets ---
     print("\nBuilding tf.data datasets …")

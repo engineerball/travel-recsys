@@ -399,6 +399,8 @@ class ArticleFeatureSchema:
     article_type_id: str = "article_type_id"          # int32 [B]
     pub_month_sin: str = "pub_month_sin"              # float32 [B]
     pub_month_cos: str = "pub_month_cos"              # float32 [B]
+    is_thai: str = "is_thai"                          # float32 [B]  1=Thai, 0=English
+    pub_recency_norm: str = "pub_recency_norm"        # float32 [B]  Z-score days since publish
 
     feature_names: List[str] = field(default_factory=lambda: [
         "item_type_id",
@@ -406,6 +408,8 @@ class ArticleFeatureSchema:
         "article_type_id",
         "pub_month_sin",
         "pub_month_cos",
+        "is_thai",
+        "pub_recency_norm",
     ])
 
 

@@ -238,6 +238,8 @@ class StratifiedInteractionDataset:
             "article_type_id": np.zeros(N, dtype=np.int32),
             "pub_month_sin": np.zeros(N, dtype=np.float32),
             "pub_month_cos": np.zeros(N, dtype=np.float32),
+            "is_thai": np.zeros(N, dtype=np.float32),
+            "pub_recency_norm": np.zeros(N, dtype=np.float32),
         }
 
         for itype in ItemType:
@@ -292,6 +294,8 @@ class StratifiedInteractionDataset:
                 iv["article_type_id"][tidx] = tdf["article_type_id"].values.astype(np.int32)
                 iv["pub_month_sin"][tidx] = tdf["pub_month_sin"].values.astype(np.float32)
                 iv["pub_month_cos"][tidx] = tdf["pub_month_cos"].values.astype(np.float32)
+                iv["is_thai"][tidx] = tdf["is_thai"].values.astype(np.float32)
+                iv["pub_recency_norm"][tidx] = tdf["pub_recency_norm"].values.astype(np.float32)
 
         # Signal weights
         sw = np.array(

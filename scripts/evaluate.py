@@ -278,7 +278,7 @@ def main() -> None:
     if args.max_eval:
         val_df = val_df.head(args.max_eval)
 
-    print(f"  Val interactions: {len(val_df)}  (from {N} total)")
+    print(f"  Val interactions: {len(val_df)}  (from {N} total, unfiltered)")
 
     # --- Load item features ---
     print("Loading item features …")
@@ -293,6 +293,20 @@ def main() -> None:
     multi_index = MultiTypeIndex(dim=64)
     multi_index.load(args.index_dir)
     print(f"  Index sizes: { {t.name: n for t, n in multi_index.index_sizes.items()} }")
+
+    # Filter val_df to interactions whose item is actually in the index.
+    # Items pruned from the index (too few interactions) can never be retrieved,
+    # so including them would artificially deflate Hit@K.
+    before_filter = len(val_df)
+    type_mask = pd.Series(False, index=val_df.index)
+    for itype in ItemType:
+        indexed = multi_index.indexed_ids(itype)
+        in_type = val_df["item_type"] == int(itype)
+        in_index = val_df["item_id"].astype(str).isin(indexed)
+        type_mask |= (in_type & in_index)
+    val_df = val_df[type_mask].reset_index(drop=True)
+    print(f"  Val after filtering to indexed items: {len(val_df)} "
+          f"({before_filter - len(val_df)} dropped — items not in index)")
 
     # --- Build model + load weights ---
     print(f"\nLoading model weights from {args.checkpoint} …")

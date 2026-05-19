@@ -224,7 +224,9 @@ class ArticleTower(BaseItemTower):
         article_type = self.article_type_emb(inputs["article_type_id"])
         pub_sin = tf.expand_dims(tf.cast(inputs["pub_month_sin"], tf.float32), -1)
         pub_cos = tf.expand_dims(tf.cast(inputs["pub_month_cos"], tf.float32), -1)
-        return tf.concat([article_type, pub_sin, pub_cos], axis=-1)
+        is_thai = tf.expand_dims(tf.cast(inputs["is_thai"], tf.float32), -1)
+        recency = tf.expand_dims(tf.cast(inputs["pub_recency_norm"], tf.float32), -1)
+        return tf.concat([article_type, pub_sin, pub_cos, is_thai, recency], axis=-1)
 
 
 def get_item_tower(

@@ -68,6 +68,9 @@ class ZScoreNormalizer:
 AGE_NORMALIZER = ZScoreNormalizer(mean=34.1, std=11.03)
 STAR_RATING_NORMALIZER = ZScoreNormalizer(mean=3.86, std=0.77)
 DURATION_DAYS_NORMALIZER = ZScoreNormalizer(mean=8.91, std=34.71)
+# Articles span ~2020–2026; reference = 2026-06-01 → mean age ~2 yrs, std ~1.5 yrs
+PUB_RECENCY_NORMALIZER = ZScoreNormalizer(mean=730.0, std=548.0)
+_PUB_REFERENCE_DATE = pd.Timestamp("2026-06-01")
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +508,14 @@ def _event_text(row) -> str:
 # Article preprocessing
 # ---------------------------------------------------------------------------
 
-def preprocess_articles(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess_articles(
+    df: pd.DataFrame,
+    recency_normalizer: Optional[ZScoreNormalizer] = None,
+) -> pd.DataFrame:
     """Convert raw articles DataFrame to ArticleTower features."""
+    if recency_normalizer is None:
+        recency_normalizer = PUB_RECENCY_NORMALIZER
+
     out = pd.DataFrame()
     out["article_id"] = df["id"]
     out["item_type_id"] = np.int32(ItemType.ARTICLE)
@@ -521,6 +530,14 @@ def preprocess_articles(df: pd.DataFrame) -> pd.DataFrame:
 
     pub_month = df["datetimeCreated"].dt.month.fillna(1).astype(float)
     out["pub_month_sin"], out["pub_month_cos"] = _MONTH_ENCODER.encode_series(pub_month)
+
+    # Language: Thai (th) vs other (en).  Binary float.
+    out["is_thai"] = (df["language"].fillna("") == "th").astype("float32")
+
+    # Recency: days between publish date and reference date, Z-score normalized.
+    created = pd.to_datetime(df["datetimeCreated"], errors="coerce")
+    age_days = (_PUB_REFERENCE_DATE - created).dt.days.fillna(recency_normalizer.mean)
+    out["pub_recency_norm"] = recency_normalizer.transform(age_days).astype("float32")
 
     out["text_for_embed"] = df.apply(_article_text, axis=1)
 
