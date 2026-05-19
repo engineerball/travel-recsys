@@ -1,15 +1,33 @@
+# Python
 __pycache__/
 *.py[cod]
-.venv/
 *.egg-info/
+
+# Environments
+.venv/
 .uv/
-checkpoints/
+.env
+
+# Data (not committed — too large / generated)
 data/raw/
 data/processed/
 data/generated/
+
+# Model artifacts
+models/
+checkpoints/
 *.h5
 *.keras
 *.npy
+*.faiss
+*.pkl
+
+# Notebooks
 .ipynb_checkpoints/
+
+# Logs
 *.log
-.env
+logs/
+
+# macOS
+.DS_Store
