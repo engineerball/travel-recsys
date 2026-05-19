@@ -7,6 +7,7 @@ subcat_affinity) from interaction history.
 
 from __future__ import annotations
 
+import ast
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -51,6 +52,38 @@ _PERSONA_ARTICLE_TYPE_PREFS: Dict[str, Dict[int, float]] = {
     "culture_seeker": {1: 4.0, 2: 4.0, 3: 3.0, 4: 3.0, 9: 2.5, 8: 2.0, 12: 0.1},
     "foodie":         {6: 5.0, 8: 3.0, 9: 2.5, 3: 2.0, 10: 1.5, 12: 0.2},
     "luxury":         {5: 4.0, 6: 4.0, 8: 3.0, 9: 3.0, 1: 2.0, 12: 0.1},
+}
+
+# travel_theme → additive article-type weight bias (typeId keys, same as _PERSONA_ARTICLE_TYPE_PREFS)
+# Applied on top of persona prefs so user-level theme signals compound.
+_THEME_ARTICLE_TYPE_BIAS: Dict[str, Dict[int, float]] = {
+    "สายกิน/ตะลุยชิม":            {6: 4.0, 8: 2.0, 9: 2.0},
+    "สายบุญ/ประวัติศาสตร์":        {1: 4.0, 2: 4.0, 4: 3.0},
+    "สายอาร์ต/แกลเลอรี่":          {2: 4.0, 1: 3.0, 4: 3.0},
+    "สายแอดเวนเจอร์/กิจกรรม":     {3: 4.0, 8: 3.0, 10: 3.0},
+    "สายทะเล":                     {3: 3.0, 8: 3.0, 10: 2.0},
+    "สายแคมป์ปิ้ง":                {3: 4.0, 8: 3.0, 10: 3.0},
+    "สายป่าเขา/น้ำตก":             {3: 3.0, 8: 3.0, 10: 2.0},
+    "สายสุขภาพ/สปา/น้ำพุร้อน":    {5: 4.0, 9: 3.0, 8: 2.0},
+    "สายชิลล์/ไนต์ไลฟ์":          {5: 3.0, 9: 3.0, 6: 2.0},
+    "สายครอบครัว/สวนสนุก":         {4: 4.0, 3: 3.0, 2: 2.0},
+    "สายชีวิตในเมือง/ช้อปปิ้ง":   {6: 3.0, 8: 3.0, 9: 2.0, 5: 2.0},
+    "สายคาเฟ่/ถ่ายรูป":           {6: 3.0, 8: 3.0, 9: 2.0},
+    "สายฟาร์ม/เกษตร/โฮมสเตย์":   {3: 2.0, 8: 2.0, 4: 2.0},
+    "สายเทศกาล/อีเวนต์":           {7: 4.0, 3: 2.0, 8: 2.0},
+    "สายชุมชน/วัฒนธรรม":           {1: 3.0, 2: 3.0, 4: 3.0},
+}
+
+# home_country → (thai_article_weight, non_thai_article_weight)
+# Thai users prefer Thai-language content; Western users prefer English content.
+_LANGUAGE_COUNTRY_PREF: Dict[str, tuple] = {
+    "Thailand":       (3.0, 1.0),
+    "China":          (0.5, 2.0),
+    "South Korea":    (0.5, 2.0),
+    "Japan":          (0.5, 2.0),
+    "United States":  (0.3, 3.0),
+    "United Kingdom": (0.3, 3.0),
+    "Other":          (1.0, 1.5),
 }
 
 # travel_theme → additive persona bias (unnormalized)
@@ -107,6 +140,19 @@ class PersonaConfig:
     travel_radius_km: float
     item_type_weights: Dict[int, float] = field(default_factory=dict)
     signal_probs: Dict[str, float] = field(default_factory=dict)
+
+
+def _parse_list(val) -> List:
+    """Parse a value that may be a list, stringified list, or scalar."""
+    if isinstance(val, list):
+        return val
+    if isinstance(val, str):
+        try:
+            result = ast.literal_eval(val)
+            return result if isinstance(result, list) else [val]
+        except (ValueError, SyntaxError):
+            return [val]
+    return []
 
 
 def load_personas_from_config(config: dict) -> List[PersonaConfig]:
@@ -405,21 +451,8 @@ class InteractionGenerator:
         Starts from global persona weights, adds theme/style bias, normalizes.
         Users with no matching themes fall back to global weights.
         """
-        import ast
-
         weights = self._pw.copy()  # shape: (n_personas,)
         persona_names = [p.name for p in self._personas]
-
-        def _parse_list(val) -> List[str]:
-            if isinstance(val, list):
-                return val
-            if isinstance(val, str):
-                try:
-                    result = ast.literal_eval(val)
-                    return result if isinstance(result, list) else [val]
-                except (ValueError, SyntaxError):
-                    return [val]
-            return []
 
         for theme in _parse_list(user_row.get("travel_theme", [])):
             for p_name, bias in _THEME_PERSONA_BIAS.get(str(theme), {}).items():
@@ -496,13 +529,32 @@ class InteractionGenerator:
                         mask &= t_mask
 
                 if itype == ItemType.ARTICLE and "article_type_id" in pool.df.columns:
-                    # Weight by persona article-type preference.
-                    # article_type_id is idx (0-based); original typeId = idx + 1.
+                    # article_type_id is 0-based idx; original typeId = idx + 1.
+                    type_ids = pool.df["article_type_id"].values + 1
+
+                    # Base: persona article-type preference
                     type_prefs = _PERSONA_ARTICLE_TYPE_PREFS.get(persona.name, {})
-                    type_ids = pool.df["article_type_id"].values + 1  # → original typeId
                     pref_weights = np.array(
                         [type_prefs.get(int(tid), 1.0) for tid in type_ids], dtype=float
                     )
+
+                    # Additive: user travel_theme → article type bias
+                    for theme in _parse_list(user_row.get("travel_theme", [])):
+                        theme_bias = _THEME_ARTICLE_TYPE_BIAS.get(str(theme), {})
+                        if theme_bias:
+                            pref_weights += np.array(
+                                [theme_bias.get(int(tid), 0.0) for tid in type_ids],
+                                dtype=float,
+                            )
+
+                    # Language weight: home_country → is_thai preference
+                    if "is_thai" in pool.df.columns:
+                        country = str(user_row.get("home_country", "Other"))
+                        thai_w, non_thai_w = _LANGUAGE_COUNTRY_PREF.get(country, (1.0, 1.5))
+                        is_thai_vals = pool.df["is_thai"].fillna(0).to_numpy(dtype=float)
+                        lang_weights = np.where(is_thai_vals > 0.5, thai_w, non_thai_w)
+                        pref_weights = pref_weights * lang_weights
+
                     weights = pref_weights * mask.astype(float)
                     w_sum = weights.sum()
                     if w_sum > 0:
