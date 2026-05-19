@@ -46,7 +46,7 @@ training:
   steps_per_epoch: 500
   patience: 15
   learning_rate: 0.001
-  warmup_epochs: 3               # linear warmup before cosine decay
+  warmup_steps: 450              # linear warmup steps (absolute, not epoch-relative)
   min_lr_ratio: 0.01             # end LR = learning_rate * min_lr_ratio
   min_item_interactions: 3       # prune catalog items with fewer interactions than this
   negative_mix:

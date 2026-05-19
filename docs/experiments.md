@@ -11,3 +11,4 @@ Architecture details: [architecture.md](architecture.md)
 | [Exp-005](experiments/exp-005.md) | 2026-05-19 | Article behavior: theme + language bias in generator | 0.082 | 0.439 |
 | [Exp-006](experiments/exp-006.md) | 2026-05-19 | Scale dataset to 5k users (stable baseline, 31.7k val) | 0.072 | 0.346 |
 | [Exp-007](experiments/exp-007.md) | 2026-05-19 | steps_per_epoch 150→500; @50/@100 up, Hit@10 down | 0.068 | 0.360 |
+| [Exp-008](experiments/exp-008.md) | 2026-05-19 | Fix warmup: step-based 450 steps; Hit@10 best so far | 0.074 | 0.343 |

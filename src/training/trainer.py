@@ -181,7 +181,11 @@ class TwoTowerTrainer:
         clipnorm = cfg.get("clipnorm", None)
 
         total_steps = epochs * steps_per_epoch
-        warmup_steps = warmup_epochs * steps_per_epoch
+        # warmup_steps (absolute) takes priority over warmup_epochs × steps_per_epoch
+        if "warmup_steps" in cfg:
+            warmup_steps = int(cfg["warmup_steps"])
+        else:
+            warmup_steps = warmup_epochs * steps_per_epoch
 
         if warmup_steps > 0 or cfg.get("min_lr_ratio"):
             schedule = WarmupCosineDecay(
