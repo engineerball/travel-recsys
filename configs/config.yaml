@@ -43,7 +43,7 @@ model:
 training:
   batch_size: 512
   epochs: 60
-  steps_per_epoch: 150
+  steps_per_epoch: 500
   patience: 15
   learning_rate: 0.001
   warmup_epochs: 3               # linear warmup before cosine decay

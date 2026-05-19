@@ -10,3 +10,4 @@ Architecture details: [architecture.md](architecture.md)
 | [Exp-004](experiments/exp-004.md) | 2026-05-19 | Article feature additions (`is_thai`, `pub_recency_norm`) | 0.080 | 0.334 |
 | [Exp-005](experiments/exp-005.md) | 2026-05-19 | Article behavior: theme + language bias in generator | 0.082 | 0.439 |
 | [Exp-006](experiments/exp-006.md) | 2026-05-19 | Scale dataset to 5k users (stable baseline, 31.7k val) | 0.072 | 0.346 |
+| [Exp-007](experiments/exp-007.md) | 2026-05-19 | steps_per_epoch 150→500; @50/@100 up, Hit@10 down | 0.068 | 0.360 |
