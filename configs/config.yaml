@@ -59,7 +59,7 @@ training:
 
 # --- Behavior generation ---
 behavior:
-  num_users: 1000
+  num_users: 5000
   interactions_per_user_min: 30
   interactions_per_user_max: 100
   popularity_power: 0.7          # power law exponent
